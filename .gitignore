@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/*.db
+.flutter-plugins
+.dart_tool/
+build/
+.vscode/
+.idea/
