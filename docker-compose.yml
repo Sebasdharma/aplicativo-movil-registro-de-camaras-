@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  buhopass-backend:
+    build:
+      context: ./backend_vision
+      dockerfile: Dockerfile
+    container_name: buhopass_vision_api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend_vision/data:/app/data
+      - ./backend_vision/dataset_estudiantes:/app/dataset_estudiantes
+    environment:
+      - PORT=5000
+      - FLASK_ENV=production
+    networks:
+      - buhopass-net
+
+networks:
+  buhopass-net:
+    driver: bridge

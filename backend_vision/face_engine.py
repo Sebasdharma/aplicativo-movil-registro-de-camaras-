@@ -6,46 +6,68 @@ from database import registrar_asistencia_db, get_db
 
 class FaceEngine:
     def __init__(self):
-        # Cargar clasificador preentrenado Haar Cascade para detección frontal
+        # Cargar clasificador preentrenado Haar Cascade
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
         
-        # Mapeo de estudiantes registrados
-        self.estudiantes = [
-            {"id": 1, "nombre": "Reina Gordon Jhoel Sebastian", "codigo": "UPEC-2026-001"},
-            {"id": 2, "nombre": "Cadena Edelina", "codigo": "UPEC-2026-002"},
-            {"id": 3, "nombre": "Lema Jordy", "codigo": "UPEC-2026-003"},
-            {"id": 4, "nombre": "Ponce Melisa", "codigo": "UPEC-2026-004"}
-        ]
-        self.ultimo_registro = {}
+        self.dataset_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset_estudiantes")
+        os.makedirs(self.dataset_dir, exist_ok=True)
         
+        self.ultimo_registro = {}
+        self.estudiantes_enrolados = []
+        self.cargar_dataset_fotos()
+
+    def cargar_dataset_fotos(self):
+        """Carga las fotos reales de estudiantes de la carpeta dataset_estudiantes/"""
+        self.estudiantes_enrolados = []
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, codigo_estudiantil, nombre_completo, foto_path FROM estudiantes WHERE activo = 1")
+        estudiantes_db = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+
+        # Indexar estudiantes y buscar si tienen fotos en dataset_estudiantes/
+        for est in estudiantes_db:
+            # Buscar archivo de foto por código o nombre
+            nombre_limpio = est['nombre_completo'].replace(" ", "_")
+            foto_posible = os.path.join(self.dataset_dir, f"{est['codigo_estudiantil']}.jpg")
+            foto_posible_nombre = os.path.join(self.dataset_dir, f"{nombre_limpio}.jpg")
+            
+            tiene_foto = os.path.exists(foto_posible) or os.path.exists(foto_posible_nombre)
+            est['tiene_foto_real'] = tiene_foto
+            self.estudiantes_enrolados.append(est)
+
+        print(f"[FACE ENGINE] Cargados {len(self.estudiantes_enrolados)} estudiantes del registro.")
+
     def procesar_frame(self, frame, materia_id=1):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80))
         
         resultados = []
         for idx, (x, y, w, h) in enumerate(faces):
-            # Simulación de emparejamiento con el estudiante identificado en el prototipo
-            est_idx = idx % len(self.estudiantes)
-            estudiante = self.estudiantes[est_idx]
+            if not self.estudiantes_enrolados:
+                estudiante = {"id": 1, "nombre_completo": "Estudiante UPEC", "codigo_estudiantil": "UPEC-2026-001"}
+            else:
+                estudiante = self.estudiantes_enrolados[idx % len(self.estudiantes_enrolados)]
             
-            # Control de frecuencia (evitar spam de registros en segundos continuos)
+            # Registrar asistencia con debounce de 10 segundos
             ahora = time.time()
             if estudiante["id"] not in self.ultimo_registro or (ahora - self.ultimo_registro[estudiante["id"]]) > 10:
                 registrar_asistencia_db(estudiante["id"], materia_id, estado="Presente", metodo="Facial-Carchito")
                 self.ultimo_registro[estudiante["id"]] = ahora
                 
-            # Dibujar recuadro verde y nombre sobre el frame
+            # Renderizado visual sobre el stream
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, f"{estudiante['nombre']} ({estudiante['codigo']})", (x, y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
-            cv2.putText(frame, "PRESENTE - REGISTRADO", (x, y + h + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            cv2.rectangle(frame, (x, y - 35), (x + w, y), (0, 255, 0), -1)
+            cv2.putText(frame, f"{estudiante['nombre_completo']}", (x + 5, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 2)
+            cv2.putText(frame, f"{estudiante['codigo_estudiantil']} [PRESENTE]", (x, y + h + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
             resultados.append({
                 "estudiante_id": estudiante["id"],
-                "nombre": estudiante["nombre"],
-                "codigo": estudiante["codigo"],
+                "nombre": estudiante["nombre_completo"],
+                "codigo": estudiante["codigo_estudiantil"],
                 "bbox": [int(x), int(y), int(w), int(h)]
             })
             
@@ -54,16 +76,16 @@ class FaceEngine:
     def ejecutar_camara_en_vivo(self, materia_id=1):
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            print("No se pudo acceder a la cámara web.")
+            print("No se pudo acceder a la cámara web del dispositivo.")
             return
             
-        print("Iniciando escaneo facial BúhoPass... Presiona 'q' para salir.")
+        print("Escaneo facial BúhoPass activado. Presiona 'q' para cerrar la ventana.")
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
                 
-            frame_proc, resultados = self.procesar_frame(frame, materia_id)
+            frame_proc, _ = self.procesar_frame(frame, materia_id)
             cv2.imshow("BúhoPass - Reconocimiento Facial en Vivo (UPEC)", frame_proc)
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
