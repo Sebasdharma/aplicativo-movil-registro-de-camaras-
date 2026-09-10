@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BuhoPass" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/upec_primary</item>
+        <item name="colorSecondary">@color/upec_secondary</item>
+        <item name="android:statusBarColor">@color/upec_primary</item>
+        <item name="android:windowBackground">@color/bg_light</item>
+    </style>
+</resources>
