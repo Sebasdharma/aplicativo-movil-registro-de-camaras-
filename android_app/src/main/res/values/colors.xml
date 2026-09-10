@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="upec_primary">#003366</color>
+    <color name="upec_secondary">#0066CC</color>
+    <color name="upec_accent">#00D2FF</color>
+    <color name="bg_light">#F8FAFC</color>
+    <color name="present_green">#10B981</color>
+    <color name="present_bg">#E6F4EA</color>
+    <color name="absent_red">#EF4444</color>
+    <color name="absent_bg">#FCE8E6</color>
+    <color name="text_dark">#1E293B</color>
+    <color name="text_muted">#64748B</color>
+    <color name="white">#FFFFFF</color>
+</resources>
