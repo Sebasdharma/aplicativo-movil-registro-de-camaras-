@@ -1,51 +1,64 @@
 package com.upec.buhopass.adapter
 
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.upec.buhopass.R
 import com.upec.buhopass.databinding.ItemEstudianteBinding
 import com.upec.buhopass.model.Estudiante
 
 class EstudianteAdapter(
-    private val lista: MutableList<Estudiante>,
+    private val estudiantes: List<Estudiante>,
     private val onToggleClick: (Estudiante) -> Unit
-) : RecyclerView.Adapter<EstudianteAdapter.ViewHolder>() {
+) : RecyclerView.Adapter<EstudianteAdapter.EstudianteViewHolder>() {
 
-    class ViewHolder(val binding: ItemEstudianteBinding) : RecyclerView.ViewHolder(binding.root)
+    inner class EstudianteViewHolder(private val binding: ItemEstudianteBinding) :
+        RecyclerView.ViewHolder(binding.root) {
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemEstudianteBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return ViewHolder(binding)
-    }
+        fun bind(estudiante: Estudiante) {
+            val initials = estudiante.nombre.split(" ")
+                .filter { it.isNotEmpty() }
+                .take(2)
+                .map { it.first() }
+                .joinToString("")
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val est = lista[position]
-        holder.binding.tvNombre.text = est.nombre_completo
-        holder.binding.tvDetalle.text = "${est.codigo_estudiantil} • Hora: ${est.hora} (${est.metodo})"
-        holder.binding.tvEstadoBadge.text = est.estado
+            binding.tvAvatarInitials.text = if (initials.isNotEmpty()) initials else "U"
+            binding.tvNombreEstudiante.text = estudiante.nombre
+            binding.tvCodigoEstudiante.text = "${estudiante.codigo} • ${estudiante.carrera}"
 
-        if (est.estado == "Presente") {
-            holder.binding.tvEstadoBadge.setTextColor(Color.parseColor("#10B981"))
-            holder.binding.tvEstadoBadge.setBackgroundResource(R.drawable.bg_badge_present)
-            holder.binding.ivAvatar.setColorFilter(Color.parseColor("#003366"))
-        } else {
-            holder.binding.tvEstadoBadge.setTextColor(Color.parseColor("#EF4444"))
-            holder.binding.tvEstadoBadge.setBackgroundColor(Color.parseColor("#FCE8E6"))
-            holder.binding.ivAvatar.setColorFilter(Color.parseColor("#EF4444"))
+            if (estudiante.presente) {
+                binding.tvEstadoAsistencia.text = "PRESENTE"
+                binding.tvEstadoAsistencia.setBackgroundResource(R.drawable.bg_badge_tomada)
+                binding.tvEstadoAsistencia.setTextColor(
+                    ContextCompat.getColor(binding.root.context, R.color.upec_green_badge_text)
+                )
+            } else {
+                binding.tvEstadoAsistencia.text = "AUSENTE"
+                binding.tvEstadoAsistencia.setBackgroundResource(R.drawable.bg_badge_pendiente)
+                binding.tvEstadoAsistencia.setTextColor(
+                    ContextCompat.getColor(binding.root.context, R.color.upec_gold_text)
+                )
+            }
+
+            binding.root.setOnClickListener {
+                onToggleClick(estudiante)
+            }
         }
-
-        holder.binding.btnToggleManual.setOnClickListener {
-            onToggleClick(est)
-        }
     }
 
-    override fun getItemCount(): Int = lista.size
-
-    fun actualizarLista(nuevaLista: List<Estudiante>) {
-        lista.clear()
-        lista.addAll(nuevaLista)
-        notifyDataSetChanged()
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EstudianteViewHolder {
+        val binding = ItemEstudianteBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return EstudianteViewHolder(binding)
     }
+
+    override fun onBindViewHolder(holder: EstudianteViewHolder, position: Int) {
+        holder.bind(estudiantes[position])
+    }
+
+    override fun getItemCount(): Int = estudiantes.size
 }

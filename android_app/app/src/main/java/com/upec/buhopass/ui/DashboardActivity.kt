@@ -1,25 +1,54 @@
 package com.upec.buhopass.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.upec.buhopass.adapter.EstudianteAdapter
+import com.upec.buhopass.adapter.ClaseAdapter
 import com.upec.buhopass.databinding.ActivityDashboardBinding
-import com.upec.buhopass.model.Estudiante
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
+import com.upec.buhopass.model.Clase
+import java.util.Locale
 
 class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var binding: ActivityDashboardBinding
-    private lateinit var adapter: EstudianteAdapter
-    private val listaEstudiantes = mutableListOf<Estudiante>()
     private var tts: TextToSpeech? = null
+
+    private val clasesList = listOf(
+        Clase(
+            id = "1",
+            materia = "Aplicaciones Moviles",
+            paralelo = "Paralelo A",
+            aula = "Aula 402",
+            edificio = "Edificio Ingeniería",
+            horario = "08:00 AM - 09:30 AM",
+            alumnos = 38,
+            estado = "Tomada"
+        ),
+        Clase(
+            id = "2",
+            materia = "Normativas de Seguridad",
+            paralelo = "Paralelo A",
+            aula = "Laboratorio 3",
+            edificio = "Edificio Ciencias",
+            horario = "10:00 AM - 11:30 AM",
+            alumnos = 42,
+            estado = "Pendiente"
+        ),
+        Clase(
+            id = "3",
+            materia = "Visión por Computador",
+            paralelo = "Paralelo B",
+            aula = "Aula 405",
+            edificio = "Edificio Ingeniería",
+            horario = "02:00 PM - 03:30 PM",
+            alumnos = 35,
+            estado = "Pendiente"
+        )
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,78 +56,79 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         setContentView(binding.root)
 
         tts = TextToSpeech(this, this)
-        configurarRecyclerView()
-        cargarDatosSemilla()
 
-        binding.swipeRefresh.setOnRefreshListener {
-            cargarDatosSemilla()
-            binding.swipeRefresh.isRefreshing = false
-        }
+        setupRecyclerView()
+        setupListeners()
+    }
 
-        binding.fabCarchito.setOnClickListener {
-            activarComandoVozCarchito()
-        }
-
-        lifecycleScope.launch {
-            while (true) {
-                delay(4000)
-                actualizarMetricas()
+    private fun setupRecyclerView() {
+        val adapter = ClaseAdapter(clasesList) { clase ->
+            val intent = Intent(this, AsistenciaActivity::class.java).apply {
+                putExtra("MATERIA", clase.materia)
+                putExtra("PARALELO", clase.paralelo)
+                putExtra("AULA", clase.aula)
+                putExtra("HORARIO", clase.horario)
             }
+            startActivity(intent)
         }
+        binding.rvClases.layoutManager = LinearLayoutManager(this)
+        binding.rvClases.adapter = adapter
     }
 
-    private fun configurarRecyclerView() {
-        adapter = EstudianteAdapter(listaEstudiantes) { est ->
-            val nuevoEstado = if (est.estado == "Presente") "Ausente" else "Presente"
-            est.estado = nuevoEstado
-            est.metodo = "Manual-Docente"
-            if (nuevoEstado == "Presente") {
-                est.hora = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            } else {
-                est.hora = "--:--:--"
+    private fun setupListeners() {
+        // Banner Voz
+        binding.bannerAsistenteVoz.setOnClickListener {
+            hablarCarchito("Hola estimado docente Samuel Lascano. Por favor indique la materia para iniciar el reconocimiento facial.")
+        }
+
+        // FAB Micrófono
+        binding.fabMic.setOnClickListener {
+            hablarCarchito("Asistente Carchito activo. Iniciando registro biométrico para Aplicaciones Móviles.")
+            Toast.makeText(this, "🎙️ Escuchando: 'Hola Carchito...'", Toast.LENGTH_SHORT).show()
+        }
+
+        // Avatar Click
+        binding.imgAvatar.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Perfil del Docente")
+                .setMessage("PhD Samuel Lascano\nDocente Titular - Carrera de Computación\nUniversidad Politécnica Estatal del Carchi")
+                .setPositiveButton("Cerrar", null)
+                .show()
+        }
+
+        // Ver Todas
+        binding.tvVerTodas.setOnClickListener {
+            Toast.makeText(this, "Mostrando todas las 4 asignaturas activas del semestre", Toast.LENGTH_SHORT).show()
+        }
+
+        // Bottom Navigation Tabs
+        binding.tabInicio.setOnClickListener {
+            Toast.makeText(this, "Estás en la pantalla de Inicio", Toast.LENGTH_SHORT).show()
+        }
+        binding.tabClases.setOnClickListener {
+            Toast.makeText(this, "Gestión de Asignaturas y Horarios", Toast.LENGTH_SHORT).show()
+        }
+        binding.tabAsistencia.setOnClickListener {
+            val intent = Intent(this, AsistenciaActivity::class.java).apply {
+                putExtra("MATERIA", "Aplicaciones Móviles")
+                putExtra("PARALELO", "Paralelo A")
+                putExtra("AULA", "Aula 402")
+                putExtra("HORARIO", "08:00 AM - 09:30 AM")
             }
-            adapter.notifyDataSetChanged()
-            actualizarMetricas()
-            Toast.makeText(this, "${est.nombre_completo}: $nuevoEstado", Toast.LENGTH_SHORT).show()
+            startActivity(intent)
         }
-        binding.rvEstudiantes.layoutManager = LinearLayoutManager(this)
-        binding.rvEstudiantes.adapter = adapter
-    }
-
-    private fun cargarDatosSemilla() {
-        val mock = listOf(
-            Estudiante(1, "UPEC-2026-001", "Reina Gordon Jhoel Sebastian", "Presente", "07:05:12", "Facial-Carchito"),
-            Estudiante(2, "UPEC-2026-002", "Cadena Edelina", "Presente", "07:06:45", "Facial-Carchito"),
-            Estudiante(3, "UPEC-2026-003", "Lema Jordy", "Ausente", "--:--:--", "No registrado"),
-            Estudiante(4, "UPEC-2026-004", "Ponce Melisa", "Presente", "07:08:20", "Facial-Carchito"),
-            Estudiante(5, "UPEC-2026-005", "Carlosama Daniel", "Ausente", "--:--:--", "No registrado"),
-            Estudiante(6, "UPEC-2026-006", "Montenegro Valeria", "Presente", "07:12:00", "Manual-Docente")
-        )
-        listaEstudiantes.clear()
-        listaEstudiantes.addAll(mock)
-        adapter.notifyDataSetChanged()
-        actualizarMetricas()
-    }
-
-    private fun actualizarMetricas() {
-        val total = listaEstudiantes.size
-        val presentes = listaEstudiantes.count { it.estado == "Presente" }
-        val ausentes = total - presentes
-        val porcentaje = if (total > 0) ((presentes.toDouble() / total) * 100).toInt() else 0
-
-        binding.tvTotalCount.text = total.toString()
-        binding.tvPresentesCount.text = presentes.toString()
-        binding.tvAusentesCount.text = ausentes.toString()
-        binding.tvPorcentajeAsist.text = "$porcentaje%"
-    }
-
-    private fun activarComandoVozCarchito() {
-        hablarCarchito("Hola docente. ¿Desea iniciar la toma de asistencia para el aula de Aplicaciones Móviles?")
-        Toast.makeText(this, "🦉 Carchito: Di 'Hola Carchito, toma asistencia'", Toast.LENGTH_LONG).show()
+        binding.tabReportes.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Reporte de Asistencia UPEC")
+                .setMessage("Resumen General:\n• Asistencia Promedio: 92.4%\n• Estudiantes Presentes: 148/160\n• Reporte exportable en formato APA / Excel.")
+                .setPositiveButton("Descargar PDF", null)
+                .show()
+        }
     }
 
     private fun hablarCarchito(mensaje: String) {
-        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "CarchitoVoice")
+        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "CARCHITO_ID")
+        Toast.makeText(this, "🦉 Carchito: $mensaje", Toast.LENGTH_LONG).show()
     }
 
     override fun onInit(status: Int) {

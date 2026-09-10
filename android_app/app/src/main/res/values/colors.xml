@@ -1,14 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="upec_primary">#003366</color>
-    <color name="upec_secondary">#0066CC</color>
-    <color name="upec_accent">#00D2FF</color>
-    <color name="bg_light">#F8FAFC</color>
-    <color name="present_green">#10B981</color>
-    <color name="present_bg">#E6F4EA</color>
+    <!-- Paleta Oficial UPEC BúhoPass -->
+    <color name="upec_green">#0A6B2D</color>
+    <color name="upec_green_dark">#064E20</color>
+    <color name="upec_green_light">#E8F5E9</color>
+    <color name="upec_green_badge_bg">#D1FAE5</color>
+    <color name="upec_green_badge_text">#065F46</color>
+    
+    <color name="upec_gold">#E5A91E</color>
+    <color name="upec_gold_light">#FEF3C7</color>
+    <color name="upec_gold_text">#92400E</color>
+    <color name="upec_gold_title">#D97706</color>
+    
+    <!-- Aliases de compatibilidad -->
+    <color name="upec_primary">#0A6B2D</color>
+    <color name="upec_secondary">#064E20</color>
+    <color name="upec_accent">#E5A91E</color>
+    <color name="present_green">#059669</color>
+    <color name="present_bg">#D1FAE5</color>
     <color name="absent_red">#EF4444</color>
-    <color name="absent_bg">#FCE8E6</color>
-    <color name="text_dark">#1E293B</color>
-    <color name="text_muted">#64748B</color>
+    <color name="absent_bg">#FEE2E2</color>
+
+    <color name="bg_light">#F9FAFB</color>
+    <color name="card_bg">#FFFFFF</color>
+    
+    <color name="text_dark">#111827</color>
+    <color name="text_muted">#6B7280</color>
+    <color name="text_light_muted">#9CA3AF</color>
+    
     <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="divider">#E5E7EB</color>
 </resources>

@@ -14,13 +14,26 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BuhoPass"
         android:usesCleartextTraffic="true">
+
+        <!-- Pantalla de Bienvenida (LAUNCHER) -->
         <activity
-            android:name=".ui.DashboardActivity"
+            android:name=".ui.WelcomeActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Dashboard del Docente -->
+        <activity
+            android:name=".ui.DashboardActivity"
+            android:exported="false" />
+
+        <!-- Pantalla de Toma de Asistencia -->
+        <activity
+            android:name=".ui.AsistenciaActivity"
+            android:exported="false" />
+
     </application>
 </manifest>
