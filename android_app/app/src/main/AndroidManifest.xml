@@ -25,7 +25,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Dashboard del Docente -->
+        <!-- Pantalla de Calibración Voice Match (Gemini Style) -->
+        <activity
+            android:name=".ui.VoiceMatchActivity"
+            android:exported="false" />
+
+        <!-- Dashboard del Docente con Jarvis Multi-Turn -->
         <activity
             android:name=".ui.DashboardActivity"
             android:exported="false" />

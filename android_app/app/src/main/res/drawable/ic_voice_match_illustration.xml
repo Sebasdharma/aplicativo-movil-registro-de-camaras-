@@ -1,0 +1,43 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- Background Card -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M16,0 H304 A16,16 0 0 1 320,16 V164 A16,16 0 0 1 304,180 H16 A16,16 0 0 1 0,164 V16 A16,16 0 0 1 16,0 Z" />
+
+    <!-- Person Head & Body -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M100,50 C80,50 70,65 70,80 C70,95 80,105 100,105 C115,105 125,95 125,80 C125,65 115,50 100,50 Z" />
+    <path
+        android:fillColor="#D97706"
+        android:pathData="M100,60 C90,60 82,68 82,78 C82,88 90,96 100,96 C110,96 118,88 118,78 C118,68 110,60 100,60 Z" />
+    <path
+        android:fillColor="#DC2626"
+        android:pathData="M65,145 C65,120 80,105 100,105 C120,105 135,120 135,145 Z" />
+
+    <!-- Speaking Sound Waves -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M135,70 C142,75 142,85 135,90" />
+    <path
+        android:strokeColor="#0284C7"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M143,62 C155,72 155,88 143,98" />
+
+    <!-- AI Frequency Circle (Jarvis / Google Style) -->
+    <path
+        android:strokeColor="#E2E8F0"
+        android:strokeWidth="6"
+        android:pathData="M225,80 m-42,0 a42,42 0 1,0 84,0 a42,42 0 1,0 -84,0" />
+    
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M205,70 h6 v20 h-6 z M215,58 h6 v44 h-6 z M225,50 h6 v60 h-6 z M235,62 h6 v36 h-6 z M245,74 h6 v12 h-6 z" />
+</vector>
