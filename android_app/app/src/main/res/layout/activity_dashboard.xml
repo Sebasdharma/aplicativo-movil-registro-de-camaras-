@@ -17,7 +17,7 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <!-- Header: Saludo y Nombre del Docente -->
+            <!-- Header: Saludo, Nombre del Docente y Menú Desplegable -->
             <RelativeLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -27,6 +27,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_alignParentStart="true"
+                    android:layout_toStartOf="@+id/layoutUserActions"
                     android:orientation="vertical">
 
                     <TextView
@@ -47,13 +48,36 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <ImageView
-                    android:id="@+id/imgAvatar"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                <!-- Acciones de Usuario: Avatar + Menú 3 Puntos -->
+                <LinearLayout
+                    android:id="@+id/layoutUserActions"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_alignParentEnd="true"
                     android:layout_centerVertical="true"
-                    android:src="@drawable/ic_user_avatar" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:id="@+id/imgAvatar"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:src="@drawable/ic_user_avatar" />
+
+                    <ImageView
+                        android:id="@+id/btnMenuOpciones"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_more_vert" />
+                </LinearLayout>
             </RelativeLayout>
 
             <!-- Métricas: 2 Tarjetas (Asistencia Hoy & Presentes Hoy) -->
