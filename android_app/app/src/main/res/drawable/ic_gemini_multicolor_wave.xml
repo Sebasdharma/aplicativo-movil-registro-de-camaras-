@@ -1,0 +1,87 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp"
+    android:height="260dp"
+    android:viewportWidth="360"
+    android:viewportHeight="260">
+
+    <!-- Soft Ambient Dark Background Behind Wave -->
+    <path
+        android:fillColor="#0D0E12"
+        android:pathData="M0,0h360v260h-360z" />
+
+    <!-- Wave Glow Layer (Outer Ambient Blur) -->
+    <path
+        android:pathData="M-10,130 C60,180 120,195 180,140 C240,85 300,100 370,145 L370,260 L-10,260 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="140"
+                android:endX="360"
+                android:endY="140"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#1E3A8A" />
+                <item android:offset="0.25" android:color="#065F46" />
+                <item android:offset="0.5" android:color="#78350F" />
+                <item android:offset="0.75" android:color="#831843" />
+                <item android:offset="1.0" android:color="#4C0519" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Main Vibrant Multicolor Horizon Wave -->
+    <path
+        android:pathData="M-10,120 C60,175 120,185 180,130 C240,75 300,90 370,135 L370,260 L-10,260 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="130"
+                android:endX="360"
+                android:endY="130"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#0284C7" />
+                <item android:offset="0.22" android:color="#10B981" />
+                <item android:offset="0.48" android:color="#EAB308" />
+                <item android:offset="0.72" android:color="#F97316" />
+                <item android:offset="1.0" android:color="#EC4899" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Glowing Top Crest Line -->
+    <path
+        android:strokeWidth="3.5"
+        android:pathData="M-10,120 C60,175 120,185 180,130 C240,75 300,90 370,135">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="0"
+                android:startY="130"
+                android:endX="360"
+                android:endY="130"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#38BDF8" />
+                <item android:offset="0.22" android:color="#34D399" />
+                <item android:offset="0.48" android:color="#FDE047" />
+                <item android:offset="0.72" android:color="#FB923C" />
+                <item android:offset="1.0" android:color="#F472B6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Soft Atmospheric Fade to Bottom -->
+    <path
+        android:pathData="M0,160 H360 V260 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="180"
+                android:startY="160"
+                android:endX="180"
+                android:endY="260"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#00000000" />
+                <item android:offset="0.7" android:color="#CC0D0E12" />
+                <item android:offset="1.0" android:color="#FF0D0E12" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

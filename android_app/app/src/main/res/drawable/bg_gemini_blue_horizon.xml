@@ -1,0 +1,65 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp"
+    android:height="200dp"
+    android:viewportWidth="360"
+    android:viewportHeight="200">
+    
+    <!-- Dark Card Background -->
+    <path
+        android:fillColor="#0B132B"
+        android:pathData="M24,0 H336 A24,24 0 0 1 360,24 V176 A24,24 0 0 1 336,200 H24 A24,24 0 0 1 0,176 V24 A24,24 0 0 1 24,0 Z" />
+
+    <!-- Sky Gradient Upper Glow -->
+    <path
+        android:pathData="M0,0 H360 V100 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="180"
+                android:startY="0"
+                android:endX="180"
+                android:endY="100"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#1A365D" />
+                <item android:offset="0.7" android:color="#1E40AF" />
+                <item android:offset="1.0" android:color="#3B82F6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lower Space Depth -->
+    <path
+        android:pathData="M0,100 H360 V200 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="180"
+                android:startY="100"
+                android:endX="180"
+                android:endY="200"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#1E3A8A" />
+                <item android:offset="0.3" android:color="#0F172A" />
+                <item android:offset="1.0" android:color="#070D1B" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Glowing Blue Horizon Line -->
+    <path
+        android:pathData="M0,98 C90,102 270,102 360,98 L360,102 C270,104 90,104 0,102 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="100"
+                android:endX="360"
+                android:endY="100"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#3B82F6" />
+                <item android:offset="0.2" android:color="#60A5FA" />
+                <item android:offset="0.5" android:color="#E0F2FE" />
+                <item android:offset="0.8" android:color="#60A5FA" />
+                <item android:offset="1.0" android:color="#3B82F6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

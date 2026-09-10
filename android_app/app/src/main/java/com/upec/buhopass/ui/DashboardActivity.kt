@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.view.MenuItem
 import android.view.View
 import android.widget.PopupMenu
@@ -29,7 +30,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var activeVoiceDialog: BottomSheetDialog? = null
     private var dialogBinding: DialogVoiceAssistantBinding? = null
 
-    // Estado conversacional (Jarvis Multi-Turn Engine)
+    // Estados de conversación
     private enum class ConversationalState {
         IDLE,
         AWAITING_COURSE,
@@ -43,7 +44,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             val textoReconocido = matches?.firstOrNull() ?: ""
-            procesarFlujoConversacionalJarvis(textoReconocido)
+            procesarFlujoConversacional(textoReconocido)
         }
     }
 
@@ -100,7 +101,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun setupListeners() {
-        // Banner de Voz & FAB: Abre el Asistente Inteligente Jarvis/Carchito
+        // Banner y FAB de Asistente de Voz
         binding.bannerAsistenteVoz.setOnClickListener {
             abrirAsistenteConversacional()
         }
@@ -109,7 +110,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             abrirAsistenteConversacional()
         }
 
-        // Menú Desplegable
+        // Menú de Perfil
         binding.imgAvatar.setOnClickListener {
             mostrarMenuDocente(it)
         }
@@ -122,7 +123,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             Toast.makeText(this, "Mostrando las 4 asignaturas del semestre académico", Toast.LENGTH_SHORT).show()
         }
 
-        // Tabs
+        // Tabs de Navegación
         binding.tabInicio.setOnClickListener {
             Toast.makeText(this, "Estás en el Inicio", Toast.LENGTH_SHORT).show()
         }
@@ -137,12 +138,12 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ================= MENÚ DESPLEGABLE DEL DOCENTE =================
+    // ================= MENÚ DESPLEGABLE =================
     private fun mostrarMenuDocente(anchor: View) {
         val popup = PopupMenu(this, anchor)
         popup.menu.add(0, 1, 0, "👤 Mi Perfil")
-        popup.menu.add(0, 2, 1, "🎙️ Calibrar Huella Vocal (Voice Match)")
-        popup.menu.add(0, 3, 2, "⚙️ Servidor IoT / Reconocimiento")
+        popup.menu.add(0, 2, 1, "🎙️ Configuración Voice Match")
+        popup.menu.add(0, 3, 2, "⚙️ Servidor IoT / Cámara")
         popup.menu.add(0, 4, 3, "🚪 Cerrar Sesión")
 
         popup.setOnMenuItemClickListener { item: MenuItem ->
@@ -193,7 +194,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 "📡 CONEXIÓN BACKEND & RECONOCIMIENTO FACIAL:\n\n" +
                 "• API REST: http://localhost:5000 / http://192.168.1.10:5000\n" +
                 "• Motor Facial: OpenCV + HaarCascade / Embeddings\n" +
-                "• Módulo Asistente: Jarvis / Carchito Speech Engine v2.0\n" +
+                "• Motor de Voz: Asistente Búho (Voz Orbit)\n" +
                 "• Base de Datos: SQLite (buhopass.db)"
             )
             .setPositiveButton("Probar Conexión") { _, _ ->
@@ -217,7 +218,7 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .show()
     }
 
-    // ================= ASISTENTE CONVERSACIONAL ESTILO JARVIS =================
+    // ================= ASISTENTE CONVERSACIONAL (VOZ ORBIT) =================
     private fun abrirAsistenteConversacional() {
         activeVoiceDialog = BottomSheetDialog(this)
         dialogBinding = DialogVoiceAssistantBinding.inflate(layoutInflater)
@@ -225,18 +226,18 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         estadoConversacion = ConversationalState.IDLE
 
-        dialogBinding?.tvAssistantStatus?.text = "JARVIS UPEC Listo"
+        dialogBinding?.tvAssistantStatus?.text = "Asistente Búho Listo"
         dialogBinding?.tvTranscription?.text = "Diga: \"Ok Búho, toma lista\""
-        hablarJarvis("A la orden, PhD Samuel Lascano. ¿En qué le puedo colaborar hoy?")
+        hablarOrbit("Hola estimado docente Samuel Lascano. ¿En qué le puedo colaborar hoy?")
 
         dialogBinding?.btnCmdAsistencia?.text = "🗣️ \"Ok Búho, toma lista\""
         dialogBinding?.btnCmdAsistencia?.setOnClickListener {
-            procesarFlujoConversacionalJarvis("Ok Búho toma lista")
+            procesarFlujoConversacional("Ok Búho toma lista")
         }
 
         dialogBinding?.btnCmdEstado?.text = "🗣️ \"¿Cuántos alumnos hay presentes?\""
         dialogBinding?.btnCmdEstado?.setOnClickListener {
-            procesarFlujoConversacionalJarvis("¿Cuántos alumnos hay presentes hoy?")
+            procesarFlujoConversacional("¿Cuántos alumnos hay presentes hoy?")
         }
 
         dialogBinding?.btnMicGoogle?.setOnClickListener {
@@ -261,16 +262,16 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
             speechRecognitionLauncher.launch(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Micrófono no disponible en emulador. Ejecutando flujo simulado.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Micrófono simulado en emulador.", Toast.LENGTH_SHORT).show()
             if (estadoConversacion == ConversationalState.AWAITING_COURSE) {
-                procesarFlujoConversacionalJarvis("Aplicaciones Móviles")
+                procesarFlujoConversacional("Aplicaciones Móviles")
             } else {
-                procesarFlujoConversacionalJarvis("Ok Búho toma lista")
+                procesarFlujoConversacional("Ok Búho toma lista")
             }
         }
     }
 
-    private fun procesarFlujoConversacionalJarvis(texto: String) {
+    private fun procesarFlujoConversacional(texto: String) {
         val comando = texto.lowercase(Locale.ROOT)
         dialogBinding?.tvTranscription?.text = "\"$texto\""
 
@@ -279,35 +280,34 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 if (comando.contains("lista") || comando.contains("asistencia") || comando.contains("toma") || comando.contains("buho") || comando.contains("búho")) {
                     estadoConversacion = ConversationalState.AWAITING_COURSE
 
-                    dialogBinding?.tvAssistantStatus?.text = "🗣️ JARVIS Pregunta:"
-                    val pregunta = "A la orden, PhD Samuel Lascano. Huella vocal confirmada al 99.4%. ¿De qué curso o asignatura desea que tome la lista hoy?"
+                    dialogBinding?.tvAssistantStatus?.text = "Asistente Pregunta:"
+                    val pregunta = "A la orden, PhD Samuel Lascano. Huella vocal confirmada. ¿De qué curso o asignatura desea que tome la lista hoy?"
                     dialogBinding?.tvTranscription?.text = pregunta
-                    hablarJarvis(pregunta)
+                    hablarOrbit(pregunta)
 
-                    // Actualizar botones de respuesta rápida para cursos
-                    dialogBinding?.btnCmdAsistencia?.text = "📱 Aplicaciones Móviles (Paralelo A)"
+                    // Opciones de respuesta rápida para cursos
+                    dialogBinding?.btnCmdAsistencia?.text = "📱 Aplicaciones Móviles - Paralelo A"
                     dialogBinding?.btnCmdAsistencia?.setOnClickListener {
-                        procesarFlujoConversacionalJarvis("Aplicaciones Móviles")
+                        procesarFlujoConversacional("Aplicaciones Móviles")
                     }
 
-                    dialogBinding?.btnCmdEstado?.text = "👁️ Visión por Computador (Paralelo B)"
+                    dialogBinding?.btnCmdEstado?.text = "👁️ Visión por Computador - Paralelo B"
                     dialogBinding?.btnCmdEstado?.setOnClickListener {
-                        procesarFlujoConversacionalJarvis("Visión por Computador")
+                        procesarFlujoConversacional("Visión por Computador")
                     }
 
-                    // Auto abrir micrófono tras la pregunta si lo desea
-                    dialogBinding?.btnMicGoogle?.text = "🎙️ Responder: Indicar Curso"
+                    dialogBinding?.btnMicGoogle?.text = "🎙️ Indicar Curso por Voz"
 
                 } else if (comando.contains("cuantos") || comando.contains("cuántos") || comando.contains("presentes")) {
-                    val respuesta = "Actualmente señor, cuenta con 148 de 160 estudiantes presentes en sus 4 cursos de la UPEC."
-                    dialogBinding?.tvAssistantStatus?.text = "📊 Reporte Vocal JARVIS"
+                    val respuesta = "Actualmente tiene 148 de 160 estudiantes presentes en sus 4 cursos de la UPEC."
+                    dialogBinding?.tvAssistantStatus?.text = "Reporte de Asistencia"
                     dialogBinding?.tvTranscription?.text = respuesta
-                    hablarJarvis(respuesta)
+                    hablarOrbit(respuesta)
                 } else {
-                    val respuesta = "Comando reconocido: '$texto'. Diga 'Ok Búho toma lista' para iniciar el registro biométrico."
-                    dialogBinding?.tvAssistantStatus?.text = "JARVIS Responde:"
+                    val respuesta = "Comando reconocido. Diga 'Ok Búho toma lista' para iniciar la toma de asistencia."
+                    dialogBinding?.tvAssistantStatus?.text = "Asistente Responde:"
                     dialogBinding?.tvTranscription?.text = respuesta
-                    hablarJarvis(respuesta)
+                    hablarOrbit(respuesta)
                 }
             }
 
@@ -330,19 +330,19 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
 
                 estadoConversacion = ConversationalState.EXECUTING_ACTION
-                dialogBinding?.tvAssistantStatus?.text = "✅ Ejecutando Registro Biométrico"
-                val respuestaFinal = "Excelente señor. Abriendo lista y activando reconocimiento facial para $cursoSeleccionado $paralelo. Que tenga una excelente clase."
+                dialogBinding?.tvAssistantStatus?.text = "Iniciando Asistencia"
+                val respuestaFinal = "Perfecto. Abriendo la lista de $cursoSeleccionado $paralelo y activando el reconocimiento facial en el aula."
                 dialogBinding?.tvTranscription?.text = respuestaFinal
-                hablarJarvis(respuestaFinal)
+                hablarOrbit(respuestaFinal)
 
                 binding.root.postDelayed({
                     activeVoiceDialog?.dismiss()
                     abrirPantallaAsistencia(cursoSeleccionado, paralelo, aula, horario)
-                }, 2800)
+                }, 2600)
             }
 
             ConversationalState.EXECUTING_ACTION -> {
-                // Ya en proceso
+                // En proceso
             }
         }
     }
@@ -371,19 +371,42 @@ class DashboardActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .show()
     }
 
-    private fun hablarJarvis(mensaje: String) {
-        // Voz Masculina Grave Tipo JARVIS
-        tts?.setPitch(0.72f)      // Tono grave
-        tts?.setSpeechRate(0.92f)  // Ritmo controlado
-        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_RESPONSE")
-        Toast.makeText(this, "🤖 JARVIS: $mensaje", Toast.LENGTH_SHORT).show()
+    // Configuración de la voz masculina estilo ORBIT (Gemini)
+    // Tono natural (0.95f), velocidad articulada (1.0f)
+    private fun hablarOrbit(mensaje: String) {
+        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "ORBIT_RESPONSE")
+        Toast.makeText(this, "🦉 Asistente: $mensaje", Toast.LENGTH_SHORT).show()
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("es", "EC")
-            tts?.setPitch(0.72f)
-            tts?.setSpeechRate(0.92f)
+            val result = tts?.setLanguage(Locale("es", "EC"))
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts?.setLanguage(Locale("es", "ES"))
+            }
+
+            // Seleccionar voz masculina de alta calidad
+            seleccionarVozMasculinaOrbit()
+
+            tts?.setPitch(0.95f)
+            tts?.setSpeechRate(1.0f)
+        }
+    }
+
+    private fun seleccionarVozMasculinaOrbit() {
+        try {
+            val voices = tts?.voices
+            if (voices != null) {
+                for (v in voices) {
+                    val name = v.name.lowercase(Locale.ROOT)
+                    if (v.locale.language == "es" && (name.contains("male") || name.contains("hombre") || name.contains("sfb") || name.contains("orbit"))) {
+                        tts?.voice = v
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback por defecto
         }
     }
 

@@ -1,211 +1,328 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/white"
-    android:padding="20dp">
+    android:background="#101114">
 
-    <!-- Top Header -->
-    <TextView
-        android:id="@+id/tvHeaderSubtitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Asistente de Voz Inteligente UPEC"
-        android:textColor="@color/upec_gold_title"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/tvHeaderTitle"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Configura Voice Match para PhD Samuel Lascano"
-        android:textColor="@color/text_dark"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvHeaderSubtitle" />
-
-    <TextView
-        android:id="@+id/tvHeaderDesc"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Toma asistencia, consulta métricas y gestiona tus aulas sin tocar la pantalla."
-        android:textColor="@color/text_muted"
-        android:textSize="13sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvHeaderTitle" />
-
-    <!-- Graphic Card Illustration -->
-    <ImageView
-        android:id="@+id/imgVoiceMatchGraphic"
-        android:layout_width="match_parent"
-        android:layout_height="140dp"
-        android:layout_marginTop="16dp"
-        android:src="@drawable/ic_voice_match_illustration"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvHeaderDesc" />
-
-    <!-- Sección Recuerda / Información -->
-    <TextView
-        android:id="@+id/tvRecuerdaTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Recuerda"
-        android:textColor="@color/text_dark"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/imgVoiceMatchGraphic" />
-
+    <!-- ================= ESTADO 1: INFORMACIÓN DE VOICE MATCH (Screenshots 1 & 2) ================= -->
     <ScrollView
+        android:id="@+id/layoutInfoState"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintBottom_toTopOf="@+id/layoutBottomActions"
-        app:layout_constraintTop_toBottomOf="@+id/tvRecuerdaTitle">
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:visibility="visible">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingTop="28dp"
+            android:paddingBottom="24dp">
 
-            <!-- Item 1: Voice Match Requerido -->
+            <!-- Logo Superior "G" -->
+            <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@drawable/ic_gemini_g" />
+
+            <!-- Título Principal -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Configura Voice Match para tu cuenta y realiza más tareas con solo hablar"
+                android:textColor="#E3E3E3"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <!-- Subtítulo -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Voice Match permite que BúhoPass te reconozca cuando le hablas a tu dispositivo."
+                android:textColor="#C4C7C5"
+                android:textSize="15sp" />
+
+            <!-- Tarjeta Gráfica: Horizonte Azul -->
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="170dp"
+                android:layout_marginTop="24dp"
+                android:scaleType="fitXY"
+                android:src="@drawable/bg_gemini_blue_horizon" />
+
+            <!-- Texto Descriptivo Central -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Esto significa que la aplicación puede ofrecer más funciones, como la toma de lista sin tocar la pantalla con &quot;Ok Búho&quot; y el reconocimiento de voz en el aula."
+                android:textColor="#C4C7C5"
+                android:textSize="14sp"
+                android:lineSpacingExtra="3dp" />
+
+            <!-- Sección: Cómo Funciona -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="Cómo funciona"
+                android:textColor="#E3E3E3"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <!-- Item 1: Grabación clips -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
+                android:layout_marginTop="16dp"
+                android:gravity="top"
                 android:orientation="horizontal">
 
                 <ImageView
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_shield_check" />
+                    android:layout_marginTop="2dp"
+                    android:src="@drawable/ic_audio_wave"
+                    app:tint="#C4C7C5" />
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="16dp"
                     android:layout_weight="1"
-                    android:text="&quot;Ok Búho&quot; requiere Voice Match para reconocerte. Solo se ejecutará cuando detecte la voz del docente titular registrado."
-                    android:textColor="@color/text_dark"
-                    android:textSize="13sp" />
+                    android:text="Grabarás clips de tu voz para que Voice Match pueda crear un modelo único a partir de ella."
+                    android:textColor="#E3E3E3"
+                    android:textSize="14sp" />
             </LinearLayout>
 
-            <!-- Item 2: Controles Táctiles Alternativos -->
+            <!-- Item 2: Comparación de voz -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
+                android:layout_marginTop="18dp"
+                android:gravity="top"
                 android:orientation="horizontal">
 
                 <ImageView
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_touch_app" />
+                    android:layout_marginTop="2dp"
+                    android:src="@drawable/ic_mic"
+                    app:tint="#C4C7C5" />
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="16dp"
                     android:layout_weight="1"
-                    android:text="No hace falta que uses la voz todo el tiempo; también puedes seleccionar los cursos y corregir listas con los controles táctiles."
-                    android:textColor="@color/text_dark"
-                    android:textSize="13sp" />
+                    android:text="BúhoPass compara tu voz con este modelo para saber que eres tú."
+                    android:textColor="#E3E3E3"
+                    android:textSize="14sp" />
             </LinearLayout>
 
-            <!-- Item 3: Modo Conversacional JARVIS -->
+            <!-- Item 3: Almacenamiento seguro -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
+                android:layout_marginTop="18dp"
+                android:gravity="top"
                 android:orientation="horizontal">
 
                 <ImageView
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_audio_wave" />
+                    android:layout_marginTop="2dp"
+                    android:src="@drawable/ic_shield_check"
+                    app:tint="#C4C7C5" />
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="16dp"
                     android:layout_weight="1"
-                    android:text="El motor de voz Carchito incluye síntesis profunda tipo Jarvis para responderte y consultar el curso deseado."
-                    android:textColor="@color/text_dark"
-                    android:textSize="13sp" />
+                    android:text="Los modelos de Voice Match se almacenan de forma segura en tu dispositivo de docente."
+                    android:textColor="#E3E3E3"
+                    android:textSize="14sp" />
             </LinearLayout>
 
-            <!-- Item 4: Configuración -->
+            <!-- Sección: Ten en cuenta lo siguiente -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="Ten en cuenta lo siguiente"
+                android:textColor="#E3E3E3"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="top"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="2dp"
+                    android:src="@drawable/ic_check"
+                    app:tint="#C4C7C5" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:text="Es posible que Voice Match te confunda con alguien cuya voz o entonación sean muy similares."
+                    android:textColor="#C4C7C5"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- Botones Inferiores: No gracias & Acepto -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="36dp"
                 android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:src="@drawable/ic_settings_voice" />
-
-                <TextView
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnNoGracias"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="8dp"
                     android:layout_weight="1"
-                    android:text="Puedes calibrar nuevamente tu patrón de voz en cualquier momento desde el menú de perfil del docente."
-                    android:textColor="@color/text_dark"
-                    android:textSize="13sp" />
+                    android:background="@drawable/bg_btn_gemini_secondary"
+                    android:text="No, gracias"
+                    android:textAllCaps="false"
+                    android:textColor="#A8C7FA"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnAcepto"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1.2"
+                    android:background="@drawable/bg_btn_gemini_primary"
+                    android:text="Acepto"
+                    android:textAllCaps="false"
+                    android:textColor="#041E49"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
         </LinearLayout>
     </ScrollView>
 
-    <!-- Bottom Buttons: No gracias & Acepto -->
-    <LinearLayout
-        android:id="@+id/layoutBottomActions"
+
+    <!-- ================= ESTADO 2: CALIBRACIÓN ACTIVA CON ONDA MULTICOLOR (Screenshots 3, 4, 5) ================= -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/layoutCalibratingState"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        app:layout_constraintBottom_toBottomOf="parent">
+        android:layout_height="match_parent"
+        android:background="#0D0E12"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="36dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
 
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnNoGracias"
+        <!-- Logo "G" Superior Izquierda -->
+        <ImageView
+            android:id="@+id/imgGeminiLogoCalib"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_gemini_g"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Indicador de Paso Circular (0, 1, 2) Superior Derecha -->
+        <TextView
+            android:id="@+id/tvStepCircle"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_circle_step"
+            android:gravity="center"
+            android:text="0"
+            android:textColor="#A8C7FA"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Texto Prominente de Calibración -->
+        <TextView
+            android:id="@+id/tvCalibrationPrompt"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_btn_outline"
-            android:text="No, gracias"
-            android:textAllCaps="false"
-            android:textColor="@color/upec_green"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="Di &quot;Ok Búho, toma la lista de Aplicaciones Móviles.&quot;"
+            android:textColor="#E3E3E3"
+            android:textSize="26sp"
+            android:lineSpacingExtra="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/imgGeminiLogoCalib" />
 
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnAcepto"
+        <TextView
+            android:id="@+id/tvCalibrationSubPrompt"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1.3"
-            android:background="@drawable/bg_btn_gold"
-            android:text="Acepto y Entrenar"
-            android:textAllCaps="false"
-            android:textColor="#1F2937"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Escuchando tu voz para calibrar el modelo..."
+            android:textColor="#8E918F"
+            android:textSize="14sp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/tvCalibrationPrompt" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <!-- Espectacular Onda Multicolor de Gemini -->
+        <ImageView
+            android:id="@+id/imgMulticolorWave"
+            android:layout_width="match_parent"
+            android:layout_height="240dp"
+            android:scaleType="fitXY"
+            android:src="@drawable/ic_gemini_multicolor_wave"
+            app:layout_constraintBottom_toTopOf="@+id/btnHablarCalibracion"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/tvCalibrationSubPrompt" />
+
+        <!-- Botón de Hablar / Tocar para avanzar -->
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnHablarCalibracion"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginBottom="24dp"
+            android:background="@drawable/bg_btn_gemini_primary"
+            android:text="🎙️ Hablar Frase"
+            android:textAllCaps="false"
+            android:textColor="#041E49"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toTopOf="@+id/btnCancelarCalibracion" />
+
+        <!-- Cancelar Inferior Izquierda -->
+        <TextView
+            android:id="@+id/btnCancelarCalibracion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="8dp"
+            android:text="Cancelar"
+            android:textColor="#A8C7FA"
+            android:textSize="15sp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</FrameLayout>

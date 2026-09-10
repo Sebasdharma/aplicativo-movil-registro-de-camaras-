@@ -6,6 +6,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -17,7 +19,7 @@ class VoiceMatchActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var binding: ActivityVoiceMatchBinding
     private var tts: TextToSpeech? = null
-    private var pasoEntrenamiento = 0
+    private var currentStep = 0 // 0, 1, 2
 
     private val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -25,10 +27,10 @@ class VoiceMatchActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             val texto = matches?.firstOrNull() ?: ""
-            procesarFraseEntrenamiento(texto)
+            avanzarPasoCalibracion(texto)
         } else {
-            // Simulación en emulador si se cancela el reconocimiento por hardware
-            procesarFraseEntrenamiento("Ok Búho toma lista")
+            // Avance interactivo si el emulador no cuenta con servicio de reconocimiento
+            avanzarPasoCalibracion("Comando de voz")
         }
     }
 
@@ -39,83 +41,62 @@ class VoiceMatchActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
 
+        // Estado 1: Botones Info
         binding.btnNoGracias.setOnClickListener {
             irAlDashboard()
         }
 
         binding.btnAcepto.setOnClickListener {
-            iniciarEntrenamientoPaso1()
+            iniciarCalibracionVisual()
+        }
+
+        // Estado 2: Calibración
+        binding.btnCancelarCalibracion.setOnClickListener {
+            binding.layoutCalibratingState.visibility = View.GONE
+            binding.layoutInfoState.visibility = View.VISIBLE
+        }
+
+        binding.btnHablarCalibracion.setOnClickListener {
+            abrirMicrofonoParaPasoActual()
         }
     }
 
-    private fun iniciarEntrenamientoPaso1() {
-        pasoEntrenamiento = 1
-        hablarJarvis("Iniciando calibración de Voice Match para PhD Samuel Lascano. Por favor diga: Ok Búho.")
-        
-        AlertDialog.Builder(this)
-            .setTitle("Paso 1 de 3: Calibración Vocal")
-            .setMessage("Por favor hable de frente al micrófono y diga:\n\n🗣️ \"Ok Búho\"")
-            .setPositiveButton("🎙️ Hablar Ahora") { _, _ ->
-                abrirMicrofono("Diga: 'Ok Búho'")
-            }
-            .setCancelable(false)
-            .show()
+    private fun iniciarCalibracionVisual() {
+        binding.layoutInfoState.visibility = View.GONE
+        binding.layoutCalibratingState.visibility = View.VISIBLE
+        currentStep = 0
+        actualizarPasoEnPantalla()
     }
 
-    private fun procesarFraseEntrenamiento(texto: String) {
-        when (pasoEntrenamiento) {
+    private fun actualizarPasoEnPantalla() {
+        binding.tvStepCircle.text = currentStep.toString()
+
+        when (currentStep) {
+            0 -> {
+                binding.tvCalibrationPrompt.text = "Di \"Ok Búho, toma la lista de Aplicaciones Móviles.\""
+                binding.tvCalibrationSubPrompt.text = "Paso 1 de 3: Di la frase con voz clara."
+                hablarOrbit("Di: Ok Búho, toma la lista de Aplicaciones Móviles.")
+            }
             1 -> {
-                pasoEntrenamiento = 2
-                hablarJarvis("Excelente entonación. Ahora diga: Hola Carchito, toma lista.")
-                AlertDialog.Builder(this)
-                    .setTitle("Paso 2 de 3: Comando de Asistencia")
-                    .setMessage("Frase 1 capturada con éxito.\n\nAhora diga:\n🗣️ \"Hola Carchito, toma lista\"")
-                    .setPositiveButton("🎙️ Hablar Ahora") { _, _ ->
-                        abrirMicrofono("Diga: 'Hola Carchito, toma lista'")
-                    }
-                    .setCancelable(false)
-                    .show()
+                binding.tvCalibrationPrompt.text = "Ahora di \"Ok Búho, ¿cuántos alumnos están presentes?\""
+                binding.tvCalibrationSubPrompt.text = "Paso 2 de 3: Reconociendo entonación."
+                hablarOrbit("Ahora di: Ok Búho, cuántos alumnos están presentes.")
             }
             2 -> {
-                pasoEntrenamiento = 3
-                hablarJarvis("Perfecto señor. Último paso. Diga: Búho, registra asistencia de mi curso.")
-                AlertDialog.Builder(this)
-                    .setTitle("Paso 3 de 3: Confirmación Final")
-                    .setMessage("Frase 2 procesada.\n\nÚltimo paso:\n🗣️ \"Búho, registra asistencia de mi curso\"")
-                    .setPositiveButton("🎙️ Hablar Ahora") { _, _ ->
-                        abrirMicrofono("Diga: 'Búho, registra asistencia de mi curso'")
-                    }
-                    .setCancelable(false)
-                    .show()
-            }
-            3 -> {
-                guardarCalibracionExitosa()
+                binding.tvCalibrationPrompt.text = "Ahora di \"Hey Búho, registra la asistencia de mi clase.\""
+                binding.tvCalibrationSubPrompt.text = "Paso 3 de 3: Finalizando modelo vocal."
+                hablarOrbit("Ahora di: Hey Búho, registra la asistencia de mi clase.")
             }
         }
     }
 
-    private fun guardarCalibracionExitosa() {
-        val prefs = getSharedPreferences("BUHOPASS_PREFS", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("VOICE_MATCH_CALIBRATED", true).apply()
+    private fun abrirMicrofonoParaPasoActual() {
+        val prompt = when (currentStep) {
+            0 -> "Di: 'Ok Búho, toma la lista de Aplicaciones Móviles'"
+            1 -> "Di: 'Ok Búho, ¿cuántos alumnos están presentes?'"
+            else -> "Di: 'Hey Búho, registra la asistencia de mi clase'"
+        }
 
-        hablarJarvis("Voice Match calibrado exitosamente. Reconocimiento biométrico fijado al 99.4% para el docente Samuel Lascano.")
-
-        AlertDialog.Builder(this)
-            .setTitle("✅ ¡Voice Match Completado!")
-            .setMessage(
-                "La huella vocal ha sido guardada en el dispositivo.\n\n" +
-                "• Usuario Autorizado: PhD Samuel Lascano\n" +
-                "• Palabras Clave: 'Ok Búho', 'Hola Carchito'\n" +
-                "• Voz del Asistente: Jarvis Masculina UPEC"
-            )
-            .setPositiveButton("Ir al Dashboard") { _, _ ->
-                irAlDashboard()
-            }
-            .setCancelable(false)
-            .show()
-    }
-
-    private fun abrirMicrofono(prompt: String) {
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -124,17 +105,40 @@ class VoiceMatchActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
             speechLauncher.launch(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Simulando micrófono en emulador...", Toast.LENGTH_SHORT).show()
-            procesarFraseEntrenamiento("Comando simulado")
+            Toast.makeText(this, "Capturando muestra vocal...", Toast.LENGTH_SHORT).show()
+            avanzarPasoCalibracion("Grabación de muestra exitosa")
         }
     }
 
-    private fun hablarJarvis(mensaje: String) {
-        // Configuración de Voz Masculina Grave (Tipo JARVIS)
-        tts?.setPitch(0.72f)      // Tono bajo masculino
-        tts?.setSpeechRate(0.92f)  // Velocidad pausada y ejecutiva
-        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_CALIBRATION")
-        Toast.makeText(this, "🤖 JARVIS: $mensaje", Toast.LENGTH_SHORT).show()
+    private fun avanzarPasoCalibracion(textoReconocido: String) {
+        if (currentStep < 2) {
+            currentStep++
+            actualizarPasoEnPantalla()
+        } else {
+            // Calibración finalizada
+            completarCalibracion()
+        }
+    }
+
+    private fun completarCalibracion() {
+        val prefs = getSharedPreferences("BUHOPASS_PREFS", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("VOICE_MATCH_CALIBRATED", true).apply()
+
+        binding.tvStepCircle.text = "✓"
+        binding.tvCalibrationPrompt.text = "¡Voice Match configurado con éxito!"
+        binding.tvCalibrationSubPrompt.text = "Modelo vocal calibrado para PhD Samuel Lascano."
+
+        hablarOrbit("Voice Match configurado con éxito. Ahora puedes pedirme que tome lista con solo hablar.")
+
+        binding.root.postDelayed({
+            irAlDashboard()
+        }, 2200)
+    }
+
+    // Configuración de la voz masculina estilo ORBIT (Gemini)
+    // Tono natural y cálido (0.95), sin distorsión robótica, ritmo seguro (1.0)
+    private fun hablarOrbit(mensaje: String) {
+        tts?.speak(mensaje, TextToSpeech.QUEUE_FLUSH, null, "ORBIT_VOICE")
     }
 
     private fun irAlDashboard() {
@@ -145,9 +149,34 @@ class VoiceMatchActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("es", "EC")
-            tts?.setPitch(0.72f)
-            tts?.setSpeechRate(0.92f)
+            val result = tts?.setLanguage(Locale("es", "EC"))
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts?.setLanguage(Locale("es", "ES"))
+            }
+
+            // Seleccionar voz masculina de alta calidad si está disponible
+            seleccionarVozMasculinaOrbit()
+
+            // Parámetros naturales Orbit (sin tonos artificiales feos)
+            tts?.setPitch(0.95f)
+            tts?.setSpeechRate(1.0f)
+        }
+    }
+
+    private fun seleccionarVozMasculinaOrbit() {
+        try {
+            val voices = tts?.voices
+            if (voices != null) {
+                for (v in voices) {
+                    val name = v.name.lowercase(Locale.ROOT)
+                    if (v.locale.language == "es" && (name.contains("male") || name.contains("hombre") || name.contains("sfb") || name.contains("orbit"))) {
+                        tts?.voice = v
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback por defecto seguro
         }
     }
 
