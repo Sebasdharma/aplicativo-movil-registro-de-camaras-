@@ -38,6 +38,7 @@ aplicativo-movil-registro-de-camaras-/
 ├── backend_vision/             # Motor de IA, Visión por Computador y API REST
 │   ├── database.py             # Base de datos SQLite y persistencia de asistencias
 │   ├── face_engine.py          # Detección y reconocimiento facial en vivo (OpenCV)
+│   ├── models/                 # Modelos faciales YuNet y SFace requeridos
 │   ├── carchito_voice.py       # Asistente virtual de voz "Carchito" (TTS & STT)
 │   ├── server.py               # API REST del sistema
 │   └── requirements.txt        # Dependencias de Python
@@ -67,6 +68,9 @@ cd backend_vision
 pip install -r requirements.txt
 python server.py
 ```
+El backend incluye los modelos YuNet y SFace necesarios para el reconocimiento
+facial; su procedencia y licencias están documentadas en
+[`backend_vision/models/README.md`](./backend_vision/models/README.md).
 El backend proporciona la API que consume la app móvil; no sirve una página web.
 
 ### 3. Ejecutar la Aplicación Móvil (Flutter)

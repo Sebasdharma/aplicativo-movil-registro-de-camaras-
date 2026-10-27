@@ -2,54 +2,29 @@ import unittest
 import threading
 from unittest.mock import patch
 
-import cv2
 import numpy as np
 
 from face_engine import FaceEngine
 
 
-class _FakeCollector:
-    def getResults(self):
-        return ((2, 48.0), (1, 42.0), (1, 45.0), (3, 90.0))
-
-
-class _FakeRecognizer:
-    def predict_collect(self, sample, collector):
-        return None
-
-
 class FaceEngineTests(unittest.TestCase):
-    def test_face_sample_variants_cover_camera_resolution_and_lighting(self):
-        sample = cv2.getGaussianKernel(200, 40) @ cv2.getGaussianKernel(
-            200, 40
-        ).T
-        sample = (sample * 255 / sample.max()).astype("uint8")
-
-        variants = FaceEngine._face_sample_variants(sample)
-
-        self.assertEqual(len(variants), 18)
-        self.assertTrue(all(variant.shape == (200, 200) for variant in variants))
-        self.assertTrue((variants[9] == cv2.flip(variants[0], 1)).all())
-
-    def test_predict_face_uses_best_distance_per_student_and_reports_margin(self):
+    def test_predict_face_uses_cosine_similarity_between_student_embeddings(self):
         engine = FaceEngine.__new__(FaceEngine)
-        engine.recognizer = _FakeRecognizer()
-
-        with patch(
-            "cv2.face.StandardCollector_create",
-            return_value=_FakeCollector(),
-        ):
-            label, confidence, margin = engine._predict_face(None)
-
+        engine.student_embeddings = {
+            1: np.asarray([0.8, 0.6], dtype=np.float32),
+            2: np.asarray([0.6, 0.8], dtype=np.float32),
+        }
+        label, similarity, margin = engine._predict_face(
+            np.asarray([1.0, 0.0], dtype=np.float32)
+        )
         self.assertEqual(label, 1)
-        self.assertEqual(confidence, 42.0)
-        self.assertEqual(margin, 6.0)
+        self.assertAlmostEqual(similarity, 0.8)
+        self.assertAlmostEqual(margin, 0.2)
 
     def test_recognition_requires_a_clear_margin_between_students(self):
-        self.assertFalse(FaceEngine._is_confident_match(62.1, 13.0))
-        self.assertFalse(FaceEngine._is_confident_match(80.0, 9.7))
-        self.assertFalse(FaceEngine._is_confident_match(83.85, 2.9))
-        self.assertTrue(FaceEngine._is_confident_match(52.1, 15.7))
+        self.assertFalse(FaceEngine._is_confident_match(0.35, 0.13))
+        self.assertFalse(FaceEngine._is_confident_match(0.8, 0.07))
+        self.assertTrue(FaceEngine._is_confident_match(0.8, 0.1))
 
     def test_identity_requires_three_consecutive_confident_frames(self):
         engine = FaceEngine.__new__(FaceEngine)
@@ -67,7 +42,7 @@ class FaceEngineTests(unittest.TestCase):
         engine = FaceEngine.__new__(FaceEngine)
         engine.ultimo_registro = {}
         engine._pending_identities = {}
-        engine.recognizer = object()
+        engine.student_embeddings = {7: np.asarray([1.0], dtype=np.float32)}
         engine.label_to_student = {
             7: {
                 "id": 7,
@@ -84,7 +59,7 @@ class FaceEngineTests(unittest.TestCase):
             ),
             patch.object(engine, "_detect_faces", return_value=[(0, 0, 100, 100)]),
             patch.object(engine, "_face_sample", return_value=np.zeros((1, 1))),
-            patch.object(engine, "_predict_face", return_value=(7, 40.0, 20.0)),
+            patch.object(engine, "_predict_face", return_value=(7, 0.9, 0.2)),
             patch.object(engine, "_confirm_identity", return_value=True),
             patch.object(FaceEngine, "_estudiantes_inscritos", return_value={7}),
             patch(
@@ -103,6 +78,7 @@ class FaceEngineTests(unittest.TestCase):
         self.assertEqual(accepted["rostros"][0]["estado"], "identificado")
         self.assertTrue(accepted["rostros"][0]["asistencia_registrada"])
         self.assertTrue(accepted["rostros"][0]["registro_nuevo"])
+        self.assertEqual(accepted["rostros"][0]["confianza"], 90.0)
         self.assertEqual(register_attendance.call_count, 2)
 
     def test_attendance_throttle_is_per_student_and_course(self):

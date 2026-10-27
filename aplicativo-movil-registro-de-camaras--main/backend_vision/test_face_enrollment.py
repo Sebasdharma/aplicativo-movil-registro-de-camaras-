@@ -1,5 +1,6 @@
 import base64
 import os
+import threading
 import tempfile
 import unittest
 from unittest.mock import Mock
@@ -72,18 +73,21 @@ class FaceEnrollmentTests(unittest.TestCase):
         engine = FaceEngine.__new__(FaceEngine)
         engine.dataset_dir = self.dataset_dir
         engine._pending_identities = {}
-        engine.recognizer = None
+        engine.student_embeddings = {}
         engine.label_to_student = {}
+        sample = np.asarray([1.0, 0.0], dtype=np.float32)
         with (
             patch.object(engine, "_detect_faces", return_value=[(0, 0, 120, 120)]),
             patch.object(
                 engine,
                 "_face_sample",
-                return_value=np.zeros((200, 200), dtype=np.uint8),
-            ),
+                return_value=sample,
+            ) as face_sample,
         ):
             engine.cargar_dataset_fotos()
-        self.assertEqual(len(engine.recognizer.getLabels()), 90)
+        self.assertEqual(face_sample.call_count, 1)
+        self.assertEqual(len(engine.student_embeddings), 1)
+        np.testing.assert_array_equal(engine.student_embeddings[1], sample)
         self.assertEqual(len(engine.label_to_student), 1)
 
         second = self._enroll("TEST-FACE-001", [self.photo] * 5)
@@ -163,22 +167,17 @@ class FaceEnrollmentTests(unittest.TestCase):
         self.assertEqual(legacy_path, "legacy-reference.jpg")
         self.assertEqual(added_photos, 5)
 
-    def test_profile_detector_is_used_when_no_frontal_face_is_found(self):
+    def test_yunet_detector_returns_face_landmarks_for_alignment(self):
         engine = FaceEngine.__new__(FaceEngine)
-        engine.face_cascade = Mock()
-        engine.face_cascade.detectMultiScale.return_value = []
-        engine.profile_face_cascade = Mock()
-        engine.profile_face_cascade.detectMultiScale.side_effect = [
-            np.asarray([[10, 20, 40, 40]]),
-            np.asarray([[30, 25, 50, 50], [0, 5, 20, 20]]),
-        ]
+        engine.face_detector = Mock()
+        engine._model_lock = threading.Lock()
+        detection = np.asarray([[10, 20, 40, 40] + [0.0] * 11], dtype=np.float32)
+        engine.face_detector.detect.return_value = (1, detection)
 
         faces = engine._detect_faces(np.zeros((100, 100, 3), dtype=np.uint8))
 
-        np.testing.assert_array_equal(
-            faces,
-            np.asarray([[20, 25, 50, 50], [80, 5, 20, 20]]),
-        )
+        engine.face_detector.setInputSize.assert_called_once_with((100, 100))
+        np.testing.assert_array_equal(faces, detection)
 
     def test_photo_upload_requires_biometric_consent(self):
         response = self._enroll("TEST-FACE-003", [self.photo], consent=False)

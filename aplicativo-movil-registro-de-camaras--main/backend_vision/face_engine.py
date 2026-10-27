@@ -1,3 +1,4 @@
+import hashlib
 import os
 import threading
 import time
@@ -9,16 +10,31 @@ from database import get_db, registrar_asistencia_db
 
 
 class FaceEngine:
-    RECOGNITION_THRESHOLD = 60.0
-    MIN_RECOGNITION_MARGIN = 12.0
+    RECOGNITION_THRESHOLD = 0.363
+    MIN_RECOGNITION_MARGIN = 0.08
     REQUIRED_CONSECUTIVE_MATCHES = 3
     MATCH_CONFIRMATION_WINDOW_SECONDS = 4
 
     def __init__(self):
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        self.face_cascade = cv2.CascadeClassifier(cascade_path)
-        profile_cascade_path = cv2.data.haarcascades + "haarcascade_profileface.xml"
-        self.profile_face_cascade = cv2.CascadeClassifier(profile_cascade_path)
+        models_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "models"
+        )
+        detector_path = os.path.join(
+            models_dir, "face_detection_yunet_2023mar.onnx"
+        )
+        recognizer_path = os.path.join(
+            models_dir, "face_recognition_sface_2021dec.onnx"
+        )
+        for model_path in (detector_path, recognizer_path):
+            if not os.path.isfile(model_path):
+                raise FileNotFoundError(
+                    f"Falta el modelo facial requerido: {model_path}"
+                )
+        self.face_detector = cv2.FaceDetectorYN_create(
+            detector_path, "", (320, 320), 0.7, 0.3, 5000
+        )
+        self.face_recognizer = cv2.FaceRecognizerSF_create(recognizer_path, "")
+        self._model_lock = threading.Lock()
         self.dataset_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "dataset_estudiantes"
         )
@@ -26,55 +42,18 @@ class FaceEngine:
         self.ultimo_registro = {}
         self._pending_identities = {}
         self._camera_stop_event = threading.Event()
-        self.recognizer = None
+        self.student_embeddings = {}
         self.label_to_student = {}
         self.cargar_dataset_fotos()
 
     def _detect_faces(self, image):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        frontal_faces = self.face_cascade.detectMultiScale(
-            gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80)
-        )
-        if len(frontal_faces) > 0:
-            return frontal_faces
-
-        profile_faces = list(self.profile_face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=4, minSize=(80, 80)
-        ))
-        mirrored_faces = self.profile_face_cascade.detectMultiScale(
-            cv2.flip(gray, 1),
-            scaleFactor=1.1,
-            minNeighbors=4,
-            minSize=(80, 80),
-        )
-        for x, y, width, height in mirrored_faces:
-            profile_faces.append((gray.shape[1] - x - width, y, width, height))
-
-        unique_faces = []
-        for face in sorted(
-            profile_faces,
-            key=lambda bounds: bounds[2] * bounds[3],
-            reverse=True,
-        ):
-            x, y, width, height = face
-            area = width * height
-            duplicate = False
-            for other_x, other_y, other_width, other_height in unique_faces:
-                intersection_width = max(
-                    0, min(x + width, other_x + other_width) - max(x, other_x)
-                )
-                intersection_height = max(
-                    0, min(y + height, other_y + other_height) - max(y, other_y)
-                )
-                intersection = intersection_width * intersection_height
-                if intersection / min(
-                    area, other_width * other_height
-                ) >= 0.5:
-                    duplicate = True
-                    break
-            if not duplicate:
-                unique_faces.append(face)
-        return np.asarray(unique_faces, dtype=np.int32).reshape(-1, 4)
+        height, width = image.shape[:2]
+        with self._model_lock:
+            self.face_detector.setInputSize((width, height))
+            _, faces = self.face_detector.detect(image)
+        if faces is None:
+            return np.empty((0, 15), dtype=np.float32)
+        return faces
 
     def validar_foto_enrolamiento(self, image_bytes):
         image = self._decode_image(image_bytes)
@@ -91,52 +70,29 @@ class FaceEngine:
             return None
         return image
 
-    def _face_sample(self, image, bounds):
-        x, y, width, height = bounds
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        face = gray[y : y + height, x : x + width]
-        return cv2.resize(face, (200, 200), interpolation=cv2.INTER_CUBIC)
-
-    @staticmethod
-    def _face_sample_variants(sample):
-        variants = [sample]
-        for size in (80, 110, 140):
-            reduced = cv2.resize(sample, (size, size), interpolation=cv2.INTER_AREA)
-            variants.append(
-                cv2.resize(reduced, (200, 200), interpolation=cv2.INTER_CUBIC)
-            )
-
-        values = np.arange(256, dtype=np.float32) / 255
-        for gamma in (0.65, 0.8, 1.25, 1.5):
-            lookup = np.clip(np.power(values, gamma) * 255, 0, 255).astype(np.uint8)
-            variants.append(cv2.LUT(sample, lookup))
-
-        variants.append(
-            cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(sample)
-        )
-        variants.extend(cv2.flip(variant, 1) for variant in list(variants))
-        return variants
+    def _face_sample(self, image, detection):
+        with self._model_lock:
+            aligned = self.face_recognizer.alignCrop(image, detection)
+            embedding = self.face_recognizer.feature(aligned).reshape(-1)
+        norm = np.linalg.norm(embedding)
+        if not np.isfinite(norm) or norm == 0:
+            raise ValueError("No se pudo calcular la representación facial.")
+        return embedding / norm
 
     def _predict_face(self, sample):
-        collector = cv2.face.StandardCollector_create()
-        self.recognizer.predict_collect(sample, collector)
-
-        best_distance_by_student = {}
-        for label, distance in collector.getResults():
-            best_distance_by_student[label] = min(
-                distance,
-                best_distance_by_student.get(label, float("inf")),
-            )
         ranked = sorted(
-            best_distance_by_student.items(),
-            key=lambda result: result[1],
+            (
+                (float(np.dot(sample, centroid)), label)
+                for label, centroid in self.student_embeddings.items()
+            ),
+            reverse=True,
         )
         if not ranked:
-            return None, float("inf"), 0.0
+            return None, -1.0, 0.0
 
-        label, confidence = ranked[0]
+        confidence, label = ranked[0]
         margin = (
-            ranked[1][1] - confidence
+            confidence - ranked[1][0]
             if len(ranked) > 1
             else float("inf")
         )
@@ -145,7 +101,7 @@ class FaceEngine:
     @classmethod
     def _is_confident_match(cls, confidence, margin):
         return (
-            confidence <= cls.RECOGNITION_THRESHOLD
+            confidence >= cls.RECOGNITION_THRESHOLD
             and margin >= cls.MIN_RECOGNITION_MARGIN
         )
 
@@ -208,12 +164,8 @@ class FaceEngine:
 
     def cargar_dataset_fotos(self):
         self._pending_identities.clear()
-        self.recognizer = None
+        self.student_embeddings = {}
         self.label_to_student = {}
-
-        if not hasattr(cv2, "face") or not hasattr(cv2.face, "LBPHFaceRecognizer_create"):
-            print("[FACE ENGINE] Instala opencv-contrib-python para habilitar reconocimiento.")
-            return
 
         conn = get_db()
         try:
@@ -230,9 +182,9 @@ class FaceEngine:
         finally:
             conn.close()
 
-        samples = []
-        labels = []
+        samples_by_student = {}
         fotos_por_estudiante = {}
+        propietario_por_hash = {}
         for estudiante in estudiantes:
             student_id = estudiante["id"]
             fotos = fotos_por_estudiante.setdefault(student_id, set())
@@ -251,6 +203,17 @@ class FaceEngine:
                 )
                 if not os.path.isfile(photo_path):
                     continue
+                with open(photo_path, "rb") as photo_file:
+                    photo_hash = hashlib.sha256(photo_file.read()).digest()
+                previous_owner = propietario_por_hash.get(photo_hash)
+                if previous_owner is not None:
+                    if previous_owner != student_id:
+                        raise ValueError(
+                            "La misma foto facial está enrolada para más de "
+                            f"un estudiante: {filename}"
+                        )
+                    continue
+                propietario_por_hash[photo_hash] = student_id
                 image = cv2.imread(photo_path)
                 if image is None:
                     print(
@@ -266,31 +229,29 @@ class FaceEngine:
                     )
                     continue
                 sample = self._face_sample(image, faces[0])
-                face_variants = self._face_sample_variants(sample)
-                samples.extend(face_variants)
-                labels.extend([student_id] * len(face_variants))
+                samples_by_student.setdefault(student_id, []).append(sample)
                 self.label_to_student[student_id] = {
                     "id": student_id,
                     "codigo_estudiantil": estudiante["codigo_estudiantil"],
                     "nombre_completo": estudiante["nombre_completo"],
                 }
 
-        if samples:
-            self.recognizer = cv2.face.LBPHFaceRecognizer_create()
-            self.recognizer.train(samples, np.asarray(labels, dtype=np.int32))
+        for student_id, samples in samples_by_student.items():
+            centroid = np.mean(samples, axis=0)
+            norm = np.linalg.norm(centroid)
+            if not np.isfinite(norm) or norm == 0:
+                raise ValueError(
+                    f"No se pudo crear el modelo facial del estudiante {student_id}."
+                )
+            self.student_embeddings[student_id] = centroid / norm
         print(
-            f"[FACE ENGINE] {len(self.label_to_student)} identidades faciales disponibles."
+            f"[FACE ENGINE] {len(self.label_to_student)} identidades faciales "
+            f"disponibles con {sum(map(len, samples_by_student.values()))} fotos."
         )
 
     def reconocer_imagen(
         self, image_bytes, materia_id, rotacion=0, session_key="default"
     ):
-        if not hasattr(cv2, "face") or not hasattr(cv2.face, "LBPHFaceRecognizer_create"):
-            return {
-                "status": "error",
-                "mensaje": "El backend requiere opencv-contrib-python para reconocer rostros.",
-            }, 503
-
         image = self._decode_image(image_bytes)
         if image is None:
             return {"status": "error", "mensaje": "La imagen recibida no es válida."}, 400
@@ -310,7 +271,7 @@ class FaceEngine:
                 "rostros": [],
             }, 200
 
-        if self.recognizer is None:
+        if not self.student_embeddings:
             self._reset_pending_identity(session_key)
             return {
                 "status": "ok",
@@ -346,8 +307,8 @@ class FaceEngine:
                 self._reset_pending_identity(session_key)
                 resultados.append({
                     "estado": "desconocido",
-                    "confianza": round(float(confidence), 1),
-                    "margen": round(float(margin), 1),
+                    "confianza": round(float(confidence * 100), 1),
+                    "margen": round(float(margin * 100), 1),
                 })
                 continue
 
@@ -355,7 +316,7 @@ class FaceEngine:
             if not self._confirm_identity(student_id, session_key):
                 resultados.append({
                     "estado": "verificando",
-                    "confianza": round(float(confidence), 1),
+                    "confianza": round(float(confidence * 100), 1),
                 })
                 continue
 
@@ -371,7 +332,7 @@ class FaceEngine:
                     "estudiante_id": student_id,
                     "nombre": estudiante["nombre_completo"],
                     "codigo": estudiante["codigo_estudiantil"],
-                    "confianza": round(float(confidence), 1),
+                    "confianza": round(float(confidence * 100), 1),
                     "asistencia_registrada": False,
                     "mensaje": str(error),
                 })
@@ -381,7 +342,7 @@ class FaceEngine:
                 "estudiante_id": student_id,
                 "nombre": estudiante["nombre_completo"],
                 "codigo": estudiante["codigo_estudiantil"],
-                "confianza": round(float(confidence), 1),
+                "confianza": round(float(confidence * 100), 1),
                 "asistencia": "Presente",
                 "registro_nuevo": registrada,
                 "asistencia_registrada": True,
@@ -405,13 +366,14 @@ class FaceEngine:
         faces = self._detect_faces(frame)
         resultados = []
         inscritos = self._estudiantes_inscritos(materia_id)
-        for x, y, width, height in faces:
-            sample = self._face_sample(frame, (x, y, width, height))
+        for face in faces:
+            x, y, width, height = face[:4].astype(int)
+            sample = self._face_sample(frame, face)
             identificado = None
             confianza = None
-            if self.recognizer is not None:
+            if self.student_embeddings:
                 label, confidence, margin = self._predict_face(sample)
-                confianza = float(confidence)
+                confianza = float(confidence * 100)
                 if self._is_confident_match(confidence, margin):
                     identificado = self.label_to_student.get(label)
                     if identificado and identificado["id"] not in inscritos:
