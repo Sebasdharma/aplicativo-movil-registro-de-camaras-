@@ -105,7 +105,11 @@ def api_auth_microsoft():
             "status": "error",
             "mensaje": "No se pudo verificar la respuesta de Microsoft. Intenta de nuevo.",
         }), 503
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as error:
+        app.logger.warning(
+            "Token de Microsoft rechazado (%s).",
+            type(error).__name__,
+        )
         return jsonify({
             "status": "error",
             "mensaje": "Microsoft devolvió un token inválido o vencido.",
