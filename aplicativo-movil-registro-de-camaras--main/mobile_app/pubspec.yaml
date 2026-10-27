@@ -1,0 +1,46 @@
+name: asistech_app
+description: "AsisTech - Sistema Inteligente de Asistencia Móvil con Reconocimiento Facial y Asistente de Voz"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.11.2
+  image: ^4.5.4
+  http: ^1.2.0
+  provider: ^6.1.1
+  speech_to_text: ^7.5.0
+  flutter_tts: ^4.2.5
+  url_launcher: ^6.2.4
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.6
+  flutter_appauth: ^12.1.0
+  shared_preferences: ^2.5.6
+  font_awesome_flutter: ^11.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/asistech_logo_cropped.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/images/asistech_adaptive_foreground.png
+  min_sdk_android: 21
+  remove_alpha_ios: true
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/asistech_logo.png
+    - assets/images/asistech_logo_cropped.png
+    - assets/images/microsoft_logo.png
+    - assets/images/carchito.png

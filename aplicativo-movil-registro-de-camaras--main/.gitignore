@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+data/*.db
+.flutter-plugins
+.dart_tool/
+build/
+.vscode/
+.idea/
+
+# Local build tools and generated files
+**/.gradle/
+**/local.properties
+**/__pycache__/
+backend_vision/data/*.db

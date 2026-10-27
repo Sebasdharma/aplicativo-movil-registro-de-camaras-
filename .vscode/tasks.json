@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Mobile format test analyze release APK",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d \"C:\\Users\\jordy\\Downloads\\aplicativo-movil-registro-de-camaras--main\\mobile_app\" && dart format lib\\screens\\live_face_scan_screen.dart lib\\screens\\student_enroll_screen.dart lib\\services\\api_service.dart && flutter test && flutter analyze --no-fatal-infos && flutter build apk --release --dart-define=API_BASE_URL=http://192.168.1.30:5000"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
