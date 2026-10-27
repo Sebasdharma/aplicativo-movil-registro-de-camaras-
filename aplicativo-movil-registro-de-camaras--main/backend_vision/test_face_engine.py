@@ -3,6 +3,7 @@ import threading
 from unittest.mock import patch
 
 import cv2
+import numpy as np
 
 from face_engine import FaceEngine
 
@@ -61,6 +62,68 @@ class FaceEngineTests(unittest.TestCase):
 
         engine._reset_pending_identity("phone-a")
         self.assertNotIn("phone-a", engine._pending_identities)
+
+    def test_failed_attendance_registration_is_retried_on_next_confirmed_scan(self):
+        engine = FaceEngine.__new__(FaceEngine)
+        engine.ultimo_registro = {}
+        engine._pending_identities = {}
+        engine.recognizer = object()
+        engine.label_to_student = {
+            7: {
+                "id": 7,
+                "codigo_estudiantil": "REAL-007",
+                "nombre_completo": "Estudiante Siete",
+            }
+        }
+
+        with (
+            patch.object(
+                engine,
+                "_decode_image",
+                return_value=np.zeros((100, 100, 3), dtype=np.uint8),
+            ),
+            patch.object(engine, "_detect_faces", return_value=[(0, 0, 100, 100)]),
+            patch.object(engine, "_face_sample", return_value=np.zeros((1, 1))),
+            patch.object(engine, "_predict_face", return_value=(7, 40.0, 20.0)),
+            patch.object(engine, "_confirm_identity", return_value=True),
+            patch.object(FaceEngine, "_estudiantes_inscritos", return_value={7}),
+            patch(
+                "face_engine.registrar_asistencia_db",
+                side_effect=[ValueError("La clase ya superó los 10 minutos."), None],
+            ) as register_attendance,
+            patch("face_engine.time.time", side_effect=[100.0, 101.0]),
+        ):
+            rejected, rejected_code = engine.reconocer_imagen(b"image", 1)
+            accepted, accepted_code = engine.reconocer_imagen(b"image", 1)
+
+        self.assertEqual(rejected_code, 200)
+        self.assertEqual(rejected["rostros"][0]["estado"], "fuera_horario")
+        self.assertFalse(rejected["rostros"][0]["asistencia_registrada"])
+        self.assertEqual(accepted_code, 200)
+        self.assertEqual(accepted["rostros"][0]["estado"], "identificado")
+        self.assertTrue(accepted["rostros"][0]["asistencia_registrada"])
+        self.assertTrue(accepted["rostros"][0]["registro_nuevo"])
+        self.assertEqual(register_attendance.call_count, 2)
+
+    def test_attendance_throttle_is_per_student_and_course(self):
+        engine = FaceEngine.__new__(FaceEngine)
+        engine.ultimo_registro = {}
+
+        with patch("face_engine.registrar_asistencia_db") as register_attendance:
+            first = engine._registrar_asistencia_reconocida(
+                7, 1, "Facial-Telefono", 100.0
+            )
+            repeated = engine._registrar_asistencia_reconocida(
+                7, 1, "Facial-Telefono", 105.0
+            )
+            other_course = engine._registrar_asistencia_reconocida(
+                7, 2, "Facial-Telefono", 105.0
+            )
+
+        self.assertEqual(first, (True, None))
+        self.assertEqual(repeated, (False, None))
+        self.assertEqual(other_course, (True, None))
+        self.assertEqual(register_attendance.call_count, 2)
 
     def test_stop_live_camera_sets_stop_event(self):
         engine = FaceEngine.__new__(FaceEngine)

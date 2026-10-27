@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import '../core/constants/app_colors.dart';
@@ -24,20 +26,31 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
+  bool _autenticandoMicrosoft = false;
 
   Future<void> _iniciarSesionMicrosoft() async {
-    setState(() => _cargando = true);
+    setState(() {
+      _cargando = true;
+      _autenticandoMicrosoft = true;
+    });
 
     try {
-      final response = await const FlutterAppAuth().authorizeAndExchangeCode(
-        AuthorizationTokenRequest(
-          _microsoftClientId,
-          _microsoftRedirectUri,
-          issuer: 'https://login.microsoftonline.com/$_microsoftTenantId/v2.0',
-          scopes: const ['openid', 'profile', 'email'],
-          promptValues: const ['select_account'],
-        ),
-      );
+      final response = await const FlutterAppAuth()
+          .authorizeAndExchangeCode(
+            AuthorizationTokenRequest(
+              _microsoftClientId,
+              _microsoftRedirectUri,
+              serviceConfiguration: AuthorizationServiceConfiguration(
+                authorizationEndpoint:
+                    'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/authorize',
+                tokenEndpoint:
+                    'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/token',
+              ),
+              scopes: const ['openid', 'profile', 'email'],
+              promptValues: const ['select_account'],
+            ),
+          )
+          .timeout(const Duration(seconds: 90));
       final idToken = response.idToken;
       if (idToken == null || idToken.isEmpty) {
         throw Exception('Microsoft no devolvió un token de identidad.');
@@ -45,6 +58,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final docente = await ApiService.loginMicrosoft(idToken);
       if (mounted) _abrirPanel(docente);
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Microsoft no respondió. Verifica que el teléfono tenga '
+              'internet y vuelve a intentarlo.',
+            ),
+          ),
+        );
+      }
     } on FlutterAppAuthUserCancelledException {
       // The user closed Microsoft sign-in without selecting an account.
     } catch (error) {
@@ -54,12 +78,20 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _cargando = false);
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _autenticandoMicrosoft = false;
+        });
+      }
     }
   }
 
   Future<void> _iniciarSesionAdministrador() async {
-    setState(() => _cargando = true);
+    setState(() {
+      _cargando = true;
+      _autenticandoMicrosoft = false;
+    });
 
     try {
       final docente = await ApiService.loginAdministrador();
@@ -229,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: _cargando
+                        child: _cargando && !_autenticandoMicrosoft
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
@@ -257,6 +289,26 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                       ),
+                      if (_cargando && _autenticandoMicrosoft) ...[
+                        const SizedBox(height: 12),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Completa el inicio de sesión en Microsoft...',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

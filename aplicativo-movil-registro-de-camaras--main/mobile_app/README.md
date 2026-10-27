@@ -143,5 +143,15 @@ flutter build ios --dart-define=API_BASE_URL=https://tu-servidor.example
 
 Sin esa variable, Android Emulator usa `10.0.2.2` y el simulador iOS usa
 `127.0.0.1` como direcciones de desarrollo. En un dispositivo fisico, usa la
-URL HTTPS accesible desde ese dispositivo. La compilacion de iOS requiere
-macOS y Xcode.
+URL HTTPS accesible desde ese dispositivo. Para pruebas en una red Wi-Fi local, usa la IPv4 actual del adaptador Wi-Fi de
+la computadora que ejecuta el backend (en Windows puedes verla con
+`ipconfig`). Por ejemplo, en la red universitaria actual:
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=http://172.20.237.44:5000
+```
+
+Conecta el telefono a la misma red Wi-Fi y permite el puerto TCP 5000 en el
+firewall solo desde la red local. La IP puede cambiar al cambiar de red o al
+reconectar la computadora; actualizala al compilar de nuevo. La compilacion de
+iOS requiere macOS y Xcode.

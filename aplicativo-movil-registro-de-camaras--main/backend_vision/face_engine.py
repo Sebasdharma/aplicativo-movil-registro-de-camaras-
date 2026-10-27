@@ -167,6 +167,26 @@ class FaceEngine:
     def _reset_pending_identity(self, session_key="default"):
         self._pending_identities.pop(session_key, None)
 
+    def _registrar_asistencia_reconocida(
+        self, estudiante_id, materia_id, metodo, ahora
+    ):
+        registro_key = (estudiante_id, materia_id)
+        if ahora - self.ultimo_registro.get(registro_key, 0) <= 10:
+            return False, None
+
+        try:
+            registrar_asistencia_db(
+                estudiante_id,
+                materia_id,
+                estado="Presente",
+                metodo=metodo,
+            )
+        except ValueError as error:
+            return False, error
+
+        self.ultimo_registro[registro_key] = ahora
+        return True, None
+
     @staticmethod
     def _estudiantes_inscritos(materia_id):
         conn = get_db()
@@ -339,28 +359,23 @@ class FaceEngine:
                 })
                 continue
 
-            ahora = time.time()
-            registrada = ahora - self.ultimo_registro.get(student_id, 0) > 10
-            if registrada:
-                try:
-                    registrar_asistencia_db(
-                        student_id,
-                        materia_id,
-                        estado="Presente",
-                        metodo="Facial-Telefono",
-                    )
-                except ValueError as error:
-                    self.ultimo_registro[student_id] = ahora
-                    resultados.append({
-                        "estado": "fuera_horario",
-                        "estudiante_id": student_id,
-                        "nombre": estudiante["nombre_completo"],
-                        "codigo": estudiante["codigo_estudiantil"],
-                        "confianza": round(float(confidence), 1),
-                        "mensaje": str(error),
-                    })
-                    continue
-                self.ultimo_registro[student_id] = ahora
+            registrada, error = self._registrar_asistencia_reconocida(
+                student_id,
+                materia_id,
+                "Facial-Telefono",
+                time.time(),
+            )
+            if error is not None:
+                resultados.append({
+                    "estado": "fuera_horario",
+                    "estudiante_id": student_id,
+                    "nombre": estudiante["nombre_completo"],
+                    "codigo": estudiante["codigo_estudiantil"],
+                    "confianza": round(float(confidence), 1),
+                    "asistencia_registrada": False,
+                    "mensaje": str(error),
+                })
+                continue
             resultados.append({
                 "estado": "identificado",
                 "estudiante_id": student_id,
@@ -369,6 +384,7 @@ class FaceEngine:
                 "confianza": round(float(confidence), 1),
                 "asistencia": "Presente",
                 "registro_nuevo": registrada,
+                "asistencia_registrada": True,
             })
 
         identificados = sum(r["estado"] == "identificado" for r in resultados)
@@ -403,39 +419,35 @@ class FaceEngine:
 
             if identificado is not None:
                 student_id = identificado["id"]
-                ahora = time.time()
-                if ahora - self.ultimo_registro.get(student_id, 0) > 10:
-                    try:
-                        registrar_asistencia_db(
-                            student_id,
-                            materia_id,
-                            estado="Presente",
-                            metodo="Facial-Carchito",
-                        )
-                    except ValueError as error:
-                        self.ultimo_registro[student_id] = ahora
-                        etiqueta = f"Fuera de horario: {error}"
-                        color = (0, 165, 255)
-                        resultados.append({
-                            "estudiante_id": student_id,
-                            "nombre": identificado["nombre_completo"],
-                            "codigo": identificado["codigo_estudiantil"],
-                            "mensaje": str(error),
-                        })
-                        cv2.rectangle(
-                            frame, (x, y), (x + width, y + height), color, 2
-                        )
-                        cv2.putText(
-                            frame,
-                            etiqueta,
-                            (x, max(y - 10, 15)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5,
-                            color,
-                            2,
-                        )
-                        continue
-                    self.ultimo_registro[student_id] = ahora
+                registrada, error = self._registrar_asistencia_reconocida(
+                    student_id,
+                    materia_id,
+                    "Facial-Carchito",
+                    time.time(),
+                )
+                if error is not None:
+                    etiqueta = f"Fuera de horario: {error}"
+                    color = (0, 165, 255)
+                    resultados.append({
+                        "estudiante_id": student_id,
+                        "nombre": identificado["nombre_completo"],
+                        "codigo": identificado["codigo_estudiantil"],
+                        "asistencia_registrada": False,
+                        "mensaje": str(error),
+                    })
+                    cv2.rectangle(
+                        frame, (x, y), (x + width, y + height), color, 2
+                    )
+                    cv2.putText(
+                        frame,
+                        etiqueta,
+                        (x, max(y - 10, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        color,
+                        2,
+                    )
+                    continue
                 etiqueta = identificado["nombre_completo"]
                 color = (0, 255, 0)
                 resultados.append({
@@ -443,6 +455,8 @@ class FaceEngine:
                     "nombre": etiqueta,
                     "codigo": identificado["codigo_estudiantil"],
                     "confianza": round(confianza, 1),
+                    "registro_nuevo": registrada,
+                    "asistencia_registrada": True,
                 })
             else:
                 etiqueta = "Desconocido"
