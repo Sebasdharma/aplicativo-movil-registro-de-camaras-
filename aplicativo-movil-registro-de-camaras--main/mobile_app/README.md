@@ -80,6 +80,11 @@ identificar ni registrar estudiantes. Los botones de comandos rápidos siguen
 disponibles cuando el micrófono o el servicio de reconocimiento de voz del
 dispositivo no funciona.
 
+El estudiante puede tener hasta diez fotos faciales adicionales, además de su
+foto de referencia original. La app captura y envía hasta cinco fotos por
+solicitud; se pueden agregar más en una segunda solicitud. Las fotos anteriores
+se conservan.
+
 La base local incluye las cinco materias y los bloques del horario de Séptimo,
 paralelo A mañana. Al seleccionar una materia, la franja amarilla muestra sus
 días, horas y si corresponde a clase o tutoría. Los códigos COMP-704 y

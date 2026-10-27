@@ -65,8 +65,8 @@ class FaceEnrollmentTests(unittest.TestCase):
             },
         )
 
-    def test_multiple_authorized_photos_are_preserved_up_to_five(self):
-        first = self._enroll("TEST-FACE-001", [self.photo, self.photo])
+    def test_multiple_authorized_photos_are_preserved_up_to_ten_in_batches(self):
+        first = self._enroll("TEST-FACE-001", [self.photo] * 5)
         self.assertEqual(first.status_code, 200, first.json)
 
         engine = FaceEngine.__new__(FaceEngine)
@@ -83,10 +83,10 @@ class FaceEnrollmentTests(unittest.TestCase):
             ),
         ):
             engine.cargar_dataset_fotos()
-        self.assertEqual(len(engine.recognizer.getLabels()), 36)
+        self.assertEqual(len(engine.recognizer.getLabels()), 90)
         self.assertEqual(len(engine.label_to_student), 1)
 
-        second = self._enroll("TEST-FACE-001", [self.photo, self.photo, self.photo])
+        second = self._enroll("TEST-FACE-001", [self.photo] * 5)
         self.assertEqual(second.status_code, 200, second.json)
 
         conn = database.get_db()
@@ -100,7 +100,7 @@ class FaceEnrollmentTests(unittest.TestCase):
             ("TEST-FACE-001",),
         ).fetchone()[0]
         conn.close()
-        self.assertEqual(photos_before_rejection, 5)
+        self.assertEqual(photos_before_rejection, 10)
 
         overflow = self._enroll("TEST-FACE-001", [self.photo])
         self.assertEqual(overflow.status_code, 409)
@@ -116,7 +116,13 @@ class FaceEnrollmentTests(unittest.TestCase):
             ("TEST-FACE-001",),
         ).fetchone()[0]
         conn.close()
-        self.assertEqual(photos_after_rejection, 5)
+        self.assertEqual(photos_after_rejection, 10)
+
+    def test_a_single_enrollment_request_accepts_at_most_five_photos(self):
+        response = self._enroll("TEST-FACE-004", [self.photo] * 6)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("por solicitud", response.get_json()["mensaje"])
 
     def test_added_photos_do_not_replace_legacy_reference(self):
         conn = database.get_db()
@@ -181,6 +187,27 @@ class FaceEnrollmentTests(unittest.TestCase):
         student_count = conn.execute(
             "SELECT COUNT(*) FROM estudiantes WHERE codigo_estudiantil = ?",
             ("TEST-FACE-003",),
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(student_count, 0)
+
+    def test_photo_is_rejected_if_saved_jpeg_does_not_have_one_face(self):
+        with patch.object(
+            server.face_engine,
+            "validar_foto_enrolamiento",
+            side_effect=[
+                (True, ""),
+                (False, "La foto debe mostrar exactamente un rostro."),
+            ],
+        ) as validate_photo:
+            response = self._enroll("TEST-FACE-005", [self.photo])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(validate_photo.call_count, 2)
+        conn = database.get_db()
+        student_count = conn.execute(
+            "SELECT COUNT(*) FROM estudiantes WHERE codigo_estudiantil = ?",
+            ("TEST-FACE-005",),
         ).fetchone()[0]
         conn.close()
         self.assertEqual(student_count, 0)

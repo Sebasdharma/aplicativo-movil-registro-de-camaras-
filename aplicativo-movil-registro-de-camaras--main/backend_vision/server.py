@@ -35,6 +35,8 @@ MICROSOFT_CLIENT_ID = os.environ.get(
 MICROSOFT_ISSUER = (
     f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}/v2.0"
 )
+MAX_FOTOS_POR_SOLICITUD = 5
+MAX_FOTOS_ADICIONALES_POR_ESTUDIANTE = 10
 MICROSOFT_JWKS_CLIENT = jwt.PyJWKClient(
     f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}"
     "/discovery/v2.0/keys"
@@ -384,12 +386,15 @@ def api_enrolar():
         if (
             not isinstance(fotos, list)
             or not fotos
-            or len(fotos) > 5
+            or len(fotos) > MAX_FOTOS_POR_SOLICITUD
             or any(not isinstance(foto, str) or not foto for foto in fotos)
         ):
             return jsonify({
                 "status": "error",
-                "mensaje": "Envía de 1 a 5 fotos faciales válidas.",
+                "mensaje": (
+                    "Envía de 1 a "
+                    f"{MAX_FOTOS_POR_SOLICITUD} fotos faciales por solicitud."
+                ),
             }), 400
         if data.get("consentimiento_biometrico") is not True:
             return jsonify({"status": "error", "mensaje": "Se requiere confirmar la autorización antes de guardar las fotos faciales."}), 400
@@ -412,7 +417,16 @@ def api_enrolar():
             )
             if image is None:
                 return jsonify({"status": "error", "mensaje": "No se pudo leer una de las fotos enviadas."}), 400
-            images.append(image)
+            encoded_ok, encoded_image = cv2.imencode(".jpg", image)
+            if not encoded_ok:
+                return jsonify({"status": "error", "mensaje": "No se pudo preparar una de las fotos faciales."}), 400
+            stored_image_bytes = encoded_image.tobytes()
+            valido, mensaje = face_engine.validar_foto_enrolamiento(
+                stored_image_bytes
+            )
+            if not valido:
+                return jsonify({"status": "error", "mensaje": mensaje}), 400
+            images.append(stored_image_bytes)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -446,22 +460,26 @@ def api_enrolar():
                 """,
                 (estudiante_id,),
             ).fetchone()["total"]
-            if fotos_adicionales_anteriores + len(images) > 5:
+            if (
+                fotos_adicionales_anteriores + len(images)
+                > MAX_FOTOS_ADICIONALES_POR_ESTUDIANTE
+            ):
                 return jsonify({
                     "status": "error",
                     "mensaje": (
                         f"Este estudiante ya tiene {fotos_adicionales_anteriores} "
-                        "fotos adicionales; puede agregar hasta 5 sin contar "
+                        f"fotos adicionales; puede agregar hasta "
+                        f"{MAX_FOTOS_ADICIONALES_POR_ESTUDIANTE} sin contar "
                         "la foto de referencia anterior."
                     ),
                 }), 409
 
         inscribir_estudiante_en_materia(cursor, estudiante_id, materia_id)
-        for image in images:
+        for image_bytes in images:
             foto_filename = f"{codigo}-{uuid.uuid4().hex}.jpg"
             foto_path = os.path.join(face_engine.dataset_dir, foto_filename)
-            if not cv2.imwrite(foto_path, image):
-                raise OSError("No se pudo guardar una de las fotos faciales.")
+            with open(foto_path, "wb") as photo_file:
+                photo_file.write(image_bytes)
             saved_photo_paths.append(foto_path)
             cursor.execute(
                 """
