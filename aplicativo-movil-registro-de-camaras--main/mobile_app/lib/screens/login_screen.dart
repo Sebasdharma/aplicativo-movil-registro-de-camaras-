@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
+import 'package:http/http.dart' as http;
 import '../core/constants/app_colors.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -27,50 +29,99 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
   String? _estadoInicioMicrosoft;
+  String? _errorInicioMicrosoft;
 
   Future<void> _iniciarSesionMicrosoft() async {
+    var etapa = 'abriendo el inicio de sesión de Microsoft';
     setState(() {
       _cargando = true;
-      _estadoInicioMicrosoft = 'Conectando con Microsoft...';
+      _errorInicioMicrosoft = null;
+      _estadoInicioMicrosoft = '1/3 Esperando la respuesta de Microsoft...';
     });
 
     try {
-      final response = await const FlutterAppAuth()
-          .authorizeAndExchangeCode(
-            AuthorizationTokenRequest(
+      const serviceConfiguration = AuthorizationServiceConfiguration(
+        authorizationEndpoint:
+            'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/authorize',
+        tokenEndpoint:
+            'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/token',
+      );
+      const appAuth = FlutterAppAuth();
+      final authorization = await appAuth
+          .authorize(
+            AuthorizationRequest(
               _microsoftClientId,
               _microsoftRedirectUri,
-              serviceConfiguration: AuthorizationServiceConfiguration(
-                authorizationEndpoint:
-                    'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/authorize',
-                tokenEndpoint:
-                    'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/token',
-              ),
+              serviceConfiguration: serviceConfiguration,
               scopes: const ['openid', 'profile', 'email'],
               promptValues: const ['select_account'],
             ),
           )
           .timeout(const Duration(seconds: 90));
-      final idToken = response.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw Exception('Microsoft no devolvió un token de identidad.');
+      final authorizationCode = authorization.authorizationCode;
+      if (authorizationCode == null || authorizationCode.isEmpty) {
+        throw Exception('Microsoft no devolvió un código de autorización.');
+      }
+      final codeVerifier = authorization.codeVerifier;
+      if (codeVerifier == null || codeVerifier.isEmpty) {
+        throw Exception('Microsoft no devolvió el verificador PKCE.');
       }
 
+      etapa = 'solicitando el token a Microsoft';
       if (mounted) {
         setState(() {
           _estadoInicioMicrosoft =
-              'Microsoft respondió. Verificando la cuenta con el servidor...';
+              '2/3 Cuenta recibida. Solicitando el token a Microsoft...';
+        });
+      }
+      final tokenResponse = await http
+          .post(
+            Uri.parse(serviceConfiguration.tokenEndpoint),
+            body: {
+              'client_id': _microsoftClientId,
+              'grant_type': 'authorization_code',
+              'code': authorizationCode,
+              'redirect_uri': _microsoftRedirectUri,
+              'code_verifier': codeVerifier,
+              'scope': 'openid profile email',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+      if (tokenResponse.statusCode != 200) {
+        throw Exception(
+          'Microsoft rechazó el canje del código '
+          '(${tokenResponse.statusCode}).',
+        );
+      }
+      final tokenData = jsonDecode(tokenResponse.body);
+      if (tokenData is! Map<String, dynamic>) {
+        throw Exception('Microsoft devolvió una respuesta de token inválida.');
+      }
+      final idToken = tokenData['id_token'];
+      if (idToken is! String || idToken.isEmpty) {
+        throw Exception('Microsoft no devolvió un token de identidad.');
+      }
+
+      etapa = 'verificando la cuenta con el backend';
+      if (mounted) {
+        setState(() {
+          _estadoInicioMicrosoft =
+              '3/3 Token recibido. Verificando la cuenta con el servidor...';
         });
       }
       final docente = await ApiService.loginMicrosoft(idToken);
       if (mounted) _abrirPanel(docente);
     } on TimeoutException {
       if (mounted) {
+        setState(() {
+          _errorInicioMicrosoft = 'Se agotó el tiempo $etapa. '
+              'Cierra la ventana de Microsoft y vuelve a intentarlo.';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Microsoft no respondió. Verifica que el teléfono tenga '
-              'internet y vuelve a intentarlo.',
+              'El inicio de sesión tardó demasiado. Revisa el detalle '
+              'que aparece en pantalla.',
             ),
           ),
         );
@@ -79,8 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
       // The user closed Microsoft sign-in without selecting an account.
     } catch (error) {
       if (mounted) {
+        setState(() {
+          _errorInicioMicrosoft = 'No se pudo $etapa: $error';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo iniciar sesión: $error')),
+          SnackBar(
+            content: Text('No se pudo $etapa. Revisa el detalle en pantalla.'),
+          ),
         );
       }
     } finally {
@@ -96,6 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _iniciarSesionAdministrador() async {
     setState(() {
       _cargando = true;
+      _errorInicioMicrosoft = null;
       _estadoInicioMicrosoft = null;
     });
 
@@ -313,6 +370,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ],
+                      if (_errorInicioMicrosoft != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorInicioMicrosoft!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: colors.error,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ],

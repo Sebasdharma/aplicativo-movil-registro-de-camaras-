@@ -388,12 +388,18 @@ class FaceEngine:
                     time.time(),
                 )
                 if error is not None:
-                    etiqueta = f"Fuera de horario: {error}"
+                    etiqueta = (
+                        f"Estudiante detectado: "
+                        f"{identificado['nombre_completo']}"
+                    )
+                    detalle = "Fuera de horario; asistencia no registrada"
                     color = (0, 165, 255)
                     resultados.append({
+                        "estado": "fuera_horario",
                         "estudiante_id": student_id,
                         "nombre": identificado["nombre_completo"],
                         "codigo": identificado["codigo_estudiantil"],
+                        "confianza": round(confianza, 1),
                         "asistencia_registrada": False,
                         "mensaje": str(error),
                     })
@@ -404,6 +410,15 @@ class FaceEngine:
                         frame,
                         etiqueta,
                         (x, max(y - 10, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        color,
+                        2,
+                    )
+                    cv2.putText(
+                        frame,
+                        detalle,
+                        (x, min(y + height + 24, frame.shape[0] - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.5,
                         color,

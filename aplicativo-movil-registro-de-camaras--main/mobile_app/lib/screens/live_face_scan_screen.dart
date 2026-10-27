@@ -185,8 +185,9 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
         _status = faces.isEmpty
             ? 'Buscando rostros...'
             : fueraDeHorario != null
-                ? 'Reconocido: ${fueraDeHorario['nombre'] ?? 'Estudiante'}. '
-                    'Asistencia no registrada: '
+                ? 'Estudiante detectado y reconocido: '
+                    '${fueraDeHorario['nombre'] ?? 'Estudiante'}. '
+                    'Asistencia no registrada por horario: '
                     '${fueraDeHorario['mensaje'] ?? 'revisa el horario de clase.'}'
                 : hasIdentified
                     ? attendanceRegistered
@@ -205,7 +206,8 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
             'no hay una clase lectiva activa.';
         unawaited(
           _announce(
-            'Se reconoció a ${newlyIdentified.join(', ')}, '
+            'Estudiante detectado y reconocido: '
+            '${newlyIdentified.join(', ')}, '
             'pero no se registró la asistencia. $reason',
           ),
         );

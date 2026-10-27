@@ -101,6 +101,47 @@ class FaceEngineTests(unittest.TestCase):
         self.assertEqual(other_course, (True, None))
         self.assertEqual(register_attendance.call_count, 2)
 
+    def test_live_camera_shows_recognized_student_when_attendance_is_too_late(self):
+        engine = FaceEngine.__new__(FaceEngine)
+        engine.student_embeddings = {7: np.asarray([1.0], dtype=np.float32)}
+        engine.label_to_student = {
+            7: {
+                "id": 7,
+                "codigo_estudiantil": "REAL-007",
+                "nombre_completo": "Estudiante Siete",
+            }
+        }
+        frame = np.zeros((200, 200, 3), dtype=np.uint8)
+        detection = np.asarray([[10, 10, 100, 100] + [0.0] * 11], dtype=np.float32)
+
+        with (
+            patch.object(engine, "_detect_faces", return_value=detection),
+            patch.object(engine, "_face_sample", return_value=np.asarray([1.0])),
+            patch.object(engine, "_predict_face", return_value=(7, 0.9, 0.2)),
+            patch.object(FaceEngine, "_estudiantes_inscritos", return_value={7}),
+            patch.object(
+                engine,
+                "_registrar_asistencia_reconocida",
+                return_value=(
+                    False,
+                    ValueError("Ya pasaron los primeros 10 minutos."),
+                ),
+            ),
+            patch("face_engine.cv2.rectangle"),
+            patch("face_engine.cv2.putText") as put_text,
+        ):
+            _, results = engine.procesar_frame(frame, materia_id=1)
+
+        self.assertEqual(results[0]["estado"], "fuera_horario")
+        self.assertEqual(results[0]["nombre"], "Estudiante Siete")
+        self.assertEqual(results[0]["confianza"], 90.0)
+        self.assertFalse(results[0]["asistencia_registrada"])
+        self.assertEqual(
+            put_text.call_args_list[0].args[1],
+            "Estudiante detectado: Estudiante Siete",
+        )
+        self.assertIn("Fuera de horario", put_text.call_args_list[1].args[1])
+
     def test_stop_live_camera_sets_stop_event(self):
         engine = FaceEngine.__new__(FaceEngine)
         engine._camera_stop_event = threading.Event()
