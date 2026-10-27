@@ -26,12 +26,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
-  bool _autenticandoMicrosoft = false;
+  String? _estadoInicioMicrosoft;
 
   Future<void> _iniciarSesionMicrosoft() async {
     setState(() {
       _cargando = true;
-      _autenticandoMicrosoft = true;
+      _estadoInicioMicrosoft = 'Conectando con Microsoft...';
     });
 
     try {
@@ -56,6 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
         throw Exception('Microsoft no devolvió un token de identidad.');
       }
 
+      if (mounted) {
+        setState(() {
+          _estadoInicioMicrosoft =
+              'Microsoft respondió. Verificando la cuenta con el servidor...';
+        });
+      }
       final docente = await ApiService.loginMicrosoft(idToken);
       if (mounted) _abrirPanel(docente);
     } on TimeoutException {
@@ -81,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() {
           _cargando = false;
-          _autenticandoMicrosoft = false;
+          _estadoInicioMicrosoft = null;
         });
       }
     }
@@ -90,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _iniciarSesionAdministrador() async {
     setState(() {
       _cargando = true;
-      _autenticandoMicrosoft = false;
+      _estadoInicioMicrosoft = null;
     });
 
     try {
@@ -261,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: _cargando && !_autenticandoMicrosoft
+                        child: _cargando && _estadoInicioMicrosoft == null
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
@@ -289,9 +295,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
                       ),
-                      if (_cargando && _autenticandoMicrosoft) ...[
+                      if (_cargando && _estadoInicioMicrosoft != null) ...[
                         const SizedBox(height: 12),
-                        const Row(
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             SizedBox(
@@ -302,7 +308,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             SizedBox(width: 10),
                             Flexible(
                               child: Text(
-                                'Completa el inicio de sesión en Microsoft...',
+                                _estadoInicioMicrosoft!,
                                 textAlign: TextAlign.center,
                               ),
                             ),
