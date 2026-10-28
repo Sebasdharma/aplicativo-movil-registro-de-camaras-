@@ -16,6 +16,14 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
+    afterEvaluate {
+        if (name == "share_plus") {
+            extensions.findByType<com.android.build.gradle.LibraryExtension>()
+                ?.compileSdk = 35
+        }
+    }
+}
+subprojects {
     project.evaluationDependsOn(":app")
 }
 subprojects {

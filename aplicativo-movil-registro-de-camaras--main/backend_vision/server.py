@@ -1,7 +1,8 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 import base64
 import binascii
+from io import BytesIO
 import os
 import re
 import cv2
@@ -12,11 +13,14 @@ from database import (
     init_db, get_db, registrar_asistencia_db, obtener_resumen_asistencia,
     obtener_materias_docente, obtener_dispositivos_iot,
     inscribir_estudiante_en_materia, aplicar_ausencias_programadas,
+    obtener_periodos_lectivos,
 )
 from carchito_voice import CarchitoVoiceAssistant
 from face_engine import FaceEngine
 import threading
 from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -179,6 +183,143 @@ def api_resumen():
             "status": "error",
             "mensaje": "No se pudo consultar la asistencia. Intenta de nuevo.",
         }), 500
+
+
+@app.route("/api/asistencia/reporte/excel", methods=["GET"])
+def api_reporte_excel():
+    materia_id = request.args.get("materia_id", type=int)
+    docente_id = request.args.get("docente_id", type=int)
+    fecha = request.args.get("fecha", datetime.now().strftime("%Y-%m-%d"))
+    if not materia_id or not docente_id:
+        return jsonify({
+            "status": "error",
+            "mensaje": "Selecciona la materia y el docente del reporte.",
+        }), 400
+
+    materias_docente = obtener_materias_docente(docente_id)
+    materia = next(
+        (item for item in materias_docente if item["id"] == materia_id),
+        None,
+    )
+    if materia is None:
+        return jsonify({
+            "status": "error",
+            "mensaje": "La materia no pertenece a la cuenta seleccionada.",
+        }), 404
+
+    try:
+        registros = obtener_resumen_asistencia(materia_id, fecha)
+        periodos = (
+            registros[0]["periodos"]
+            if registros
+            else obtener_periodos_lectivos(materia["horario"], fecha)
+        )
+        total_con_falta = sum(
+            any(periodo["estado"] == "Ausente" for periodo in estudiante["periodos"])
+            for estudiante in registros
+        )
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "Asistencia diaria"
+        hoja.cell(1, 1, "Reporte diario de asistencia")
+        hoja.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4 + len(periodos))
+        hoja.cell(1, 1).font = Font(bold=True, size=14, color="FFFFFF")
+        hoja.cell(1, 1).fill = PatternFill("solid", fgColor="006B3F")
+        hoja.cell(2, 1, "Materia")
+        hoja.cell(2, 2, materia["nombre_materia"])
+        hoja.cell(3, 1, "Código")
+        hoja.cell(3, 2, materia["codigo_materia"])
+        hoja.cell(4, 1, "Fecha")
+        hoja.cell(4, 2, fecha)
+        hoja.cell(5, 1, "Total de estudiantes")
+        hoja.cell(5, 2, len(registros))
+        hoja.cell(5, 3, "Estudiantes con falta (únicos)")
+        hoja.cell(5, 4, total_con_falta)
+
+        encabezados = [
+            "Código estudiantil",
+            "Estudiante",
+            "Nivel / paralelo",
+            *[
+                f"{periodo['inicio']}-{periodo['fin']}"
+                for periodo in periodos
+            ],
+            "Falta del día",
+        ]
+        fila_encabezado = 7
+        for columna, encabezado in enumerate(encabezados, start=1):
+            celda = hoja.cell(fila_encabezado, columna, encabezado)
+            celda.font = Font(bold=True, color="FFFFFF")
+            celda.fill = PatternFill("solid", fgColor="006B3F")
+            celda.alignment = Alignment(horizontal="center", wrap_text=True)
+
+        for numero_fila, estudiante in enumerate(registros, start=fila_encabezado + 1):
+            detalle = {
+                periodo["indice"]: periodo
+                for periodo in estudiante["periodos"]
+            }
+            tiene_falta = any(
+                periodo["estado"] == "Ausente"
+                for periodo in estudiante["periodos"]
+            )
+            valores = [
+                estudiante["codigo_estudiantil"],
+                estudiante["nombre_completo"],
+                estudiante["nivel_paralelo"],
+                *[
+                    (
+                        f"{detalle[periodo['indice']]['estado']} "
+                        f"{detalle[periodo['indice']]['hora']}"
+                        if detalle[periodo["indice"]]["hora"] != "--:--:--"
+                        else detalle[periodo["indice"]]["estado"]
+                    )
+                    for periodo in periodos
+                ],
+                "Sí" if tiene_falta else "No",
+            ]
+            for columna, valor in enumerate(valores, start=1):
+                celda = hoja.cell(numero_fila, columna, valor)
+                if valor == "Sí":
+                    celda.fill = PatternFill("solid", fgColor="FCE4D6")
+                elif valor == "Presente":
+                    celda.fill = PatternFill("solid", fgColor="E2F0D9")
+
+        hoja.freeze_panes = "A8"
+        hoja.auto_filter.ref = (
+            f"A7:{hoja.cell(fila_encabezado, len(encabezados)).column_letter}"
+            f"{max(fila_encabezado, hoja.max_row)}"
+        )
+        anchos = [20, 34, 22] + [18] * len(periodos) + [16]
+        for columna, ancho in enumerate(anchos, start=1):
+            hoja.column_dimensions[
+                hoja.cell(fila_encabezado, columna).column_letter
+            ].width = ancho
+
+        archivo = BytesIO()
+        libro.save(archivo)
+        archivo.seek(0)
+        codigo_seguro = re.sub(
+            r"[^A-Za-z0-9_-]+", "-", materia["codigo_materia"]
+        ).strip("-")
+        return send_file(
+            archivo,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name=f"asistencia-{codigo_seguro}-{fecha}.xlsx",
+        )
+    except ValueError as error:
+        return jsonify({"status": "error", "mensaje": str(error)}), 400
+    except Exception:
+        app.logger.exception("No se pudo generar el reporte diario de Excel.")
+        return jsonify({
+            "status": "error",
+            "mensaje": "No se pudo generar el reporte. Intenta de nuevo.",
+        }), 500
+
 
 @app.route("/api/asistencia/manual", methods=["POST"])
 def api_manual():

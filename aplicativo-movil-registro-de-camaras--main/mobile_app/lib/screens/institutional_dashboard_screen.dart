@@ -303,13 +303,13 @@ class _InstitutionalDashboardScreenState
     final periodos = _estudiantes.expand((estudiante) => estudiante.periodos);
     final periodosActivos = periodos.isNotEmpty;
     final presentes = periodosActivos
-        ? periodos
-            .where((periodo) => {
+        ? _estudiantes.where((estudiante) {
+            return estudiante.periodos.any((periodo) => {
                   'Presente',
                   'Atrasado',
                   'Justificado',
-                }.contains(periodo.estado))
-            .length
+                }.contains(periodo.estado));
+          }).length
         : _estudiantes
             .where((estudiante) =>
                 estudiante.estado == 'Presente' ||
@@ -317,7 +317,11 @@ class _InstitutionalDashboardScreenState
                 estudiante.estado == 'Parcial')
             .length;
     final ausentes = periodosActivos
-        ? periodos.where((periodo) => periodo.estado == 'Ausente').length
+        ? _estudiantes
+            .where((estudiante) => estudiante.periodos.any(
+                  (periodo) => periodo.estado == 'Ausente',
+                ))
+            .length
         : _estudiantes
             .where((estudiante) => estudiante.estado == 'Ausente')
             .length;
@@ -645,12 +649,12 @@ class _InstitutionalDashboardScreenState
                   label: 'TOTAL', value: '$total', color: AppColors.upecGreen),
               const SizedBox(width: 5),
               _MetricCard(
-                  label: periodosActivos ? 'HORAS PRESENTES' : 'PRESENTES',
+                  label: periodosActivos ? 'EST. PRESENTES' : 'PRESENTES',
                   value: '$presentes',
                   color: AppColors.statePresent),
               const SizedBox(width: 5),
               _MetricCard(
-                  label: periodosActivos ? 'HORAS AUSENTES' : 'AUSENTES',
+                  label: periodosActivos ? 'EST. CON FALTA' : 'AUSENTES',
                   value: '$ausentes',
                   color: AppColors.stateAbsent),
             ],
@@ -746,6 +750,7 @@ class _InstitutionalDashboardScreenState
         return InstitutionalSettingsView(
           key: const ValueKey('settings-tab'),
           docente: widget.docente,
+          materias: _materias,
           isDarkMode: Theme.of(context).brightness == Brightness.dark,
           onThemeModeChanged: widget.onThemeModeChanged,
           onChangeAccount: _cerrarSesion,

@@ -106,6 +106,41 @@ class ApiService {
     }
   }
 
+  static Future<Uint8List> descargarReporteAsistencia({
+    required int materiaId,
+    required int docenteId,
+    required DateTime fecha,
+  }) async {
+    final fechaFormateada = '${fecha.year.toString().padLeft(4, '0')}-'
+        '${fecha.month.toString().padLeft(2, '0')}-'
+        '${fecha.day.toString().padLeft(2, '0')}';
+    final uri = Uri.parse('$baseUrl/api/asistencia/reporte/excel').replace(
+      queryParameters: {
+        'materia_id': '$materiaId',
+        'docente_id': '$docenteId',
+        'fecha': fechaFormateada,
+      },
+    );
+    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      var mensaje = 'No se pudo generar el reporte '
+          '(${response.statusCode}).';
+      try {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        if (data is Map<String, dynamic> && data['mensaje'] is String) {
+          mensaje = data['mensaje'] as String;
+        }
+      } on FormatException {
+        // Keep the HTTP status message when the server does not return JSON.
+      }
+      throw Exception(mensaje);
+    }
+    if (response.bodyBytes.isEmpty) {
+      throw Exception('El servidor devolvió un reporte vacío.');
+    }
+    return response.bodyBytes;
+  }
+
   // Alternar o marcar asistencia manual (Presente, Ausente, Atrasado, Justificado)
   static Future<bool> registrarAsistenciaManual({
     required int estudianteId,

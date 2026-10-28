@@ -22,7 +22,10 @@ class CarchitoVoiceAssistant:
             resumen_periodos = conn.execute(
                 """
                 SELECT COUNT(DISTINCT p.estudiante_id)
-                    AS estudiantes_con_registro
+                    AS estudiantes_con_registro,
+                       COUNT(DISTINCT CASE WHEN p.estado = 'Ausente'
+                                           THEN p.estudiante_id END)
+                    AS estudiantes_ausentes
                 FROM asistencia_periodos p
                 JOIN estudiantes e ON e.id = p.estudiante_id
                 JOIN materia_estudiantes me
@@ -31,7 +34,6 @@ class CarchitoVoiceAssistant:
                 WHERE p.materia_id = ?
                   AND p.fecha = ?
                   AND e.activo = 1
-                  AND p.metodo_registro != 'Regla-10min'
                 """,
                 (materia_id, fecha),
             ).fetchone()
@@ -70,7 +72,11 @@ class CarchitoVoiceAssistant:
                     SUM(CASE WHEN a.hora_2_estado IN ('Presente', 'Atrasado')
                              THEN 1 ELSE 0 END) AS h2_presentes,
                     SUM(CASE WHEN a.hora_2_estado = 'Ausente'
-                             THEN 1 ELSE 0 END) AS h2_ausentes
+                             THEN 1 ELSE 0 END) AS h2_ausentes,
+                    COUNT(DISTINCT CASE
+                        WHEN a.hora_1_estado = 'Ausente'
+                          OR a.hora_2_estado = 'Ausente'
+                        THEN e.id END) AS estudiantes_ausentes
                 FROM asistencias a
                 JOIN estudiantes e ON e.id = a.estudiante_id
                 JOIN materia_estudiantes me
@@ -79,7 +85,6 @@ class CarchitoVoiceAssistant:
                 WHERE a.materia_id = ?
                     AND a.fecha = ?
                     AND e.activo = 1
-                    AND COALESCE(a.metodo_registro, '') != 'Regla-10min'
                 """,
                 (materia_id, fecha),
             ).fetchone()
@@ -90,6 +95,7 @@ class CarchitoVoiceAssistant:
             estudiantes_con_registro = resumen_periodos[
                 "estudiantes_con_registro"
             ] or 0
+            estudiantes_ausentes = resumen_periodos["estudiantes_ausentes"] or 0
             reporte = {
                 f"hora_{row['periodo_indice']}": {
                     "presentes": row["presentes"] or 0,
@@ -101,6 +107,7 @@ class CarchitoVoiceAssistant:
             estudiantes_con_registro = (
                 resumen_legacy["estudiantes_con_registro"] or 0
             )
+            estudiantes_ausentes = resumen_legacy["estudiantes_ausentes"] or 0
             h1_presentes = resumen_legacy["h1_presentes"] or 0
             h1_ausentes = resumen_legacy["h1_ausentes"] or 0
             h2_presentes = resumen_legacy["h2_presentes"] or 0
@@ -135,8 +142,9 @@ class CarchitoVoiceAssistant:
             mensaje = (
                 f"Reporte de {materia_nombre} para hoy: "
                 f"{estudiantes_con_registro} estudiantes tienen registros. "
-                f"{resumen_horas} Aún no calculo pendientes "
-                "porque falta asociar la lista de estudiantes a esta materia."
+                f"{estudiantes_ausentes} estudiantes tienen al menos una falta, "
+                "contados una sola vez por materia y día. "
+                f"Detalle por hora: {resumen_horas}"
             )
         return {
             "accion": "consultar_reporte",
@@ -144,6 +152,7 @@ class CarchitoVoiceAssistant:
             "materia": materia_nombre,
             "fecha": fecha,
             "estudiantes_con_registro": estudiantes_con_registro,
+            "estudiantes_ausentes": estudiantes_ausentes,
             "reporte": reporte,
             "mensaje": mensaje,
         }

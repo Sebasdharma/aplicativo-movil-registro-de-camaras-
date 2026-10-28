@@ -127,6 +127,7 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
 
         self.assertEqual(result["accion"], "consultar_reporte")
         self.assertEqual(result["estudiantes_con_registro"], 2)
+        self.assertEqual(result["estudiantes_ausentes"], 1)
         self.assertEqual(
             result["reporte"]["hora_1"],
             {"presentes": 1, "ausentes": 1},
@@ -135,9 +136,9 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
             result["reporte"]["hora_2"],
             {"presentes": 1, "ausentes": 0},
         )
-        self.assertIn("falta asociar la lista", result["mensaje"])
+        self.assertIn("una sola vez por materia y día", result["mensaje"])
 
-    def test_report_ignores_automatic_absence_rules(self):
+    def test_report_counts_automatic_absences_once_per_student(self):
         conn = self._get_db()
         fecha = datetime.now().strftime("%Y-%m-%d")
         conn.execute(
@@ -155,8 +156,9 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
             "Hola Carchito, reporte de asistencia"
         )
 
-        self.assertEqual(result["estudiantes_con_registro"], 0)
-        self.assertIn("no hay registros de asistencia", result["mensaje"])
+        self.assertEqual(result["estudiantes_con_registro"], 1)
+        self.assertEqual(result["estudiantes_ausentes"], 1)
+        self.assertIn("una sola vez por materia y día", result["mensaje"])
 
     def test_report_includes_all_scheduled_hours_when_attendance_is_recorded(self):
         conn = self._get_db()
@@ -185,6 +187,7 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
         )
 
         self.assertEqual(result["estudiantes_con_registro"], 2)
+        self.assertEqual(result["estudiantes_ausentes"], 2)
         self.assertEqual(
             result["reporte"],
             {
@@ -200,6 +203,7 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
         )
 
         self.assertEqual(result["estudiantes_con_registro"], 0)
+        self.assertEqual(result["estudiantes_ausentes"], 0)
         self.assertEqual(
             result["reporte"],
             {
@@ -208,7 +212,7 @@ class CarchitoVoiceAssistantTests(unittest.TestCase):
             },
         )
         self.assertIn("no hay registros de asistencia", result["mensaje"])
-        self.assertIn("no puedo calcular estudiantes pendientes", result["mensaje"])
+        self.assertIn("no hay registros de asistencia", result["mensaje"])
 
 
 if __name__ == "__main__":

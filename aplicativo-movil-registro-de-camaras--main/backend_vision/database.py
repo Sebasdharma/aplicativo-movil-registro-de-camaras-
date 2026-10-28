@@ -533,7 +533,7 @@ def _periodo_actual(periodos, ahora):
     for periodo in periodos:
         inicio = _periodo_datetime(ahora.strftime("%Y-%m-%d"), periodo["inicio"])
         fin = _periodo_datetime(ahora.strftime("%Y-%m-%d"), periodo["fin"])
-        if inicio <= ahora < fin or inicio - timedelta(minutes=10) <= ahora < inicio:
+        if inicio <= ahora < fin:
             return periodo
     return None
 
@@ -686,34 +686,22 @@ def _sincronizar_asistencia_legacy(
 def _aplicar_ausencias_automaticas(
     cursor, estudiante_id, materia_id, fecha, periodos, ahora
 ):
-    if fecha != ahora.strftime("%Y-%m-%d"):
-        return False
-
-    blocks = {}
-    for periodo in periodos:
-        blocks.setdefault(periodo["bloque"], []).append(periodo)
-
     cambio = False
-    for periodos_bloque in blocks.values():
-        inicio_bloque = _periodo_datetime(fecha, periodos_bloque[0]["inicio"])
-        fin_bloque = _periodo_datetime(fecha, periodos_bloque[-1]["fin"])
-        if (
-            ahora < inicio_bloque + timedelta(minutes=10)
-            or ahora >= fin_bloque
-        ):
+    for periodo in periodos:
+        inicio = _periodo_datetime(fecha, periodo["inicio"])
+        if ahora <= inicio + timedelta(minutes=10):
             continue
-        for periodo in periodos_bloque:
-            cambio = _guardar_periodo(
-                cursor,
-                estudiante_id,
-                materia_id,
-                fecha,
-                periodo,
-                "Ausente",
-                "--:--:--",
-                "Regla-10min",
-                solo_si_no_existe=True,
-            ) or cambio
+        cambio = _guardar_periodo(
+            cursor,
+            estudiante_id,
+            materia_id,
+            fecha,
+            periodo,
+            "Ausente",
+            "--:--:--",
+            "Regla-10min",
+            solo_si_no_existe=True,
+        ) or cambio
     if cambio:
         _sincronizar_asistencia_legacy(
             cursor,
@@ -870,30 +858,18 @@ def registrar_asistencia_db(
         if es_escaneo_facial:
             periodo_actual = _periodo_actual(periodos, ahora)
             if periodo_actual is None:
-                raise ValueError("El escaneo facial está fuera del horario de clase.")
-            periodos_bloque = [
-                periodo
-                for periodo in periodos
-                if periodo["bloque"] == periodo_actual["bloque"]
-            ]
-            inicio_bloque = _periodo_datetime(
-                fecha, periodos_bloque[0]["inicio"]
-            )
-            if (
-                periodo_actual["indice"] == periodos_bloque[0]["indice"]
-                and ahora >= inicio_bloque + timedelta(minutes=10)
-            ):
                 raise ValueError(
-                    "Ya pasaron los primeros 10 minutos de esta clase; "
-                    "las faltas se mantienen. El docente puede corregirlas "
-                    "hora por hora."
+                    "El escaneo facial solo se permite durante una hora lectiva."
                 )
-            periodos_a_marcar = [
-                periodo
-                for periodo in periodos
-                if periodo["bloque"] == periodo_actual["bloque"]
-                and periodo["indice"] >= periodo_actual["indice"]
-            ]
+            inicio_periodo = _periodo_datetime(
+                fecha, periodo_actual["inicio"]
+            )
+            if ahora > inicio_periodo + timedelta(minutes=10):
+                raise ValueError(
+                    "Ya pasaron los primeros 10 minutos de esta hora lectiva; "
+                    "el docente puede corregir la asistencia manualmente."
+                )
+            periodos_a_marcar = [periodo_actual]
         else:
             if periodo_indice is None:
                 periodo_actual = _periodo_actual(periodos, ahora)
@@ -989,8 +965,7 @@ def obtener_resumen_asistencia(materia_id=1, fecha=None):
                 periodos,
                 ahora,
             )
-        if fecha == ahora.strftime("%Y-%m-%d"):
-            conn.commit()
+        conn.commit()
 
         detalles = cursor.execute(
             """

@@ -47,17 +47,15 @@ class _LoginScreenState extends State<LoginScreen> {
             'https://login.microsoftonline.com/$_microsoftTenantId/oauth2/v2.0/token',
       );
       const appAuth = FlutterAppAuth();
-      final authorization = await appAuth
-          .authorize(
-            AuthorizationRequest(
-              _microsoftClientId,
-              _microsoftRedirectUri,
-              serviceConfiguration: serviceConfiguration,
-              scopes: const ['openid', 'profile', 'email'],
-              promptValues: const ['select_account'],
-            ),
-          )
-          .timeout(const Duration(seconds: 90));
+      final authorization = await appAuth.authorize(
+        AuthorizationRequest(
+          _microsoftClientId,
+          _microsoftRedirectUri,
+          serviceConfiguration: serviceConfiguration,
+          scopes: const ['openid', 'profile', 'email'],
+          promptValues: const ['select_account'],
+        ),
+      );
       final authorizationCode = authorization.authorizationCode;
       if (authorizationCode == null || authorizationCode.isEmpty) {
         throw Exception('Microsoft no devolvió un código de autorización.');
@@ -74,19 +72,17 @@ class _LoginScreenState extends State<LoginScreen> {
               '2/3 Cuenta recibida. Solicitando el token a Microsoft...';
         });
       }
-      final tokenResponse = await http
-          .post(
-            Uri.parse(serviceConfiguration.tokenEndpoint),
-            body: {
-              'client_id': _microsoftClientId,
-              'grant_type': 'authorization_code',
-              'code': authorizationCode,
-              'redirect_uri': _microsoftRedirectUri,
-              'code_verifier': codeVerifier,
-              'scope': 'openid profile email',
-            },
-          )
-          .timeout(const Duration(seconds: 30));
+      final tokenResponse = await http.post(
+        Uri.parse(serviceConfiguration.tokenEndpoint),
+        body: {
+          'client_id': _microsoftClientId,
+          'grant_type': 'authorization_code',
+          'code': authorizationCode,
+          'redirect_uri': _microsoftRedirectUri,
+          'code_verifier': codeVerifier,
+          'scope': 'openid profile email',
+        },
+      ).timeout(const Duration(seconds: 30));
       if (tokenResponse.statusCode != 200) {
         throw Exception(
           'Microsoft rechazó el canje del código '

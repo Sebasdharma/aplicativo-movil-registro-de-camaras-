@@ -44,8 +44,16 @@ class MateriaEnrollmentTests(unittest.TestCase):
         self.conn.commit()
         self.conn.close()
 
+    def _resumen_en(self, ahora):
+        with patch.object(database, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = ahora
+            return database.obtener_resumen_asistencia(
+                materia_id=1,
+                fecha=ahora.strftime("%Y-%m-%d"),
+            )
+
     def test_attendance_summary_contains_only_students_enrolled_in_selected_course(self):
-        summary = database.obtener_resumen_asistencia(materia_id=1)
+        summary = self._resumen_en(datetime(2026, 10, 27, 9, 0, 0))
 
         self.assertEqual([row["codigo_estudiantil"] for row in summary], ["REAL-001"])
         self.assertEqual(summary[0]["hora_1_estado"], "Pendiente")
@@ -96,16 +104,13 @@ class MateriaEnrollmentTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "ok")
-        summary = database.obtener_resumen_asistencia(
-            materia_id=1,
-            fecha="2026-10-27",
-        )
+        summary = self._resumen_en(datetime(2026, 10, 27, 11, 0, 0))
         self.assertEqual(summary[0]["estado"], "Parcial")
         self.assertEqual(summary[0]["hora_1_estado"], "Ausente")
         self.assertEqual(summary[0]["hora_2_estado"], "Presente")
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Ausente", "Presente", "Ausente"],
+            ["Ausente", "Presente", "Pendiente"],
         )
 
     def test_schedule_splits_class_hours_and_excludes_tutorials(self):
@@ -121,7 +126,7 @@ class MateriaEnrollmentTests(unittest.TestCase):
             [("10:00", "11:00"), ("11:00", "12:00"), ("12:00", "13:00")],
         )
 
-    def test_facial_scan_in_first_hour_marks_all_hours_of_that_class_block(self):
+    def test_facial_scan_in_first_hour_marks_only_the_current_hour(self):
         with patch.object(database, "datetime", wraps=datetime) as clock:
             clock.now.return_value = datetime(2026, 10, 27, 10, 5, 0)
             result = database.registrar_asistencia_db(
@@ -130,14 +135,30 @@ class MateriaEnrollmentTests(unittest.TestCase):
                 metodo="Facial-Telefono",
             )
 
-        self.assertEqual(result["periodos_registrados"], [1, 2, 3])
-        summary = database.obtener_resumen_asistencia(1, "2026-10-27")
+        self.assertEqual(result["periodos_registrados"], [1])
+        summary = self._resumen_en(datetime(2026, 10, 27, 10, 5, 0))
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Presente", "Presente", "Presente"],
+            ["Presente", "Pendiente", "Pendiente"],
         )
 
-    def test_facial_scan_after_first_ten_minutes_keeps_block_absent(self):
+    def test_facial_scan_at_exactly_ten_minutes_is_allowed(self):
+        with patch.object(database, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 27, 10, 10, 0)
+            result = database.registrar_asistencia_db(
+                self.student_one,
+                1,
+                metodo="Facial-Telefono",
+            )
+
+        self.assertEqual(result["periodos_registrados"], [1])
+        summary = self._resumen_en(datetime(2026, 10, 27, 10, 10, 0))
+        self.assertEqual(
+            [period["estado"] for period in summary[0]["periodos"]],
+            ["Presente", "Pendiente", "Pendiente"],
+        )
+
+    def test_facial_scan_after_first_ten_minutes_keeps_only_current_hour_absent(self):
         fixed_time = datetime(2026, 10, 27, 10, 11, 0)
         database.aplicar_ausencias_programadas(fixed_time)
 
@@ -150,10 +171,43 @@ class MateriaEnrollmentTests(unittest.TestCase):
                     metodo="Facial-Telefono",
                 )
 
-        summary = database.obtener_resumen_asistencia(1, "2026-10-27")
+        summary = self._resumen_en(fixed_time)
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Ausente", "Ausente", "Ausente"],
+            ["Ausente", "Pendiente", "Pendiente"],
+        )
+
+    def test_manual_attendance_can_correct_a_hour_after_the_scan_deadline(self):
+        fixed_time = datetime(2026, 10, 27, 10, 20, 0)
+        with patch.object(database, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = fixed_time
+            result = database.registrar_asistencia_db(
+                self.student_one,
+                1,
+                estado="Presente",
+                metodo="Manual-Docente",
+                periodo_indice=1,
+            )
+
+        self.assertEqual(result["periodos_registrados"], [1])
+        summary = self._resumen_en(fixed_time)
+        self.assertEqual(summary[0]["periodos"][0]["estado"], "Presente")
+        self.assertEqual(summary[0]["periodos"][1]["estado"], "Pendiente")
+
+    def test_facial_scan_before_hour_start_is_rejected(self):
+        with patch.object(database, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 27, 9, 59, 0)
+            with self.assertRaisesRegex(ValueError, "hora lectiva"):
+                database.registrar_asistencia_db(
+                    self.student_one,
+                    1,
+                    metodo="Facial-Telefono",
+                )
+
+        summary = self._resumen_en(datetime(2026, 10, 27, 9, 59, 0))
+        self.assertEqual(
+            [period["estado"] for period in summary[0]["periodos"]],
+            ["Pendiente", "Pendiente", "Pendiente"],
         )
 
     def test_facial_scan_in_second_hour_preserves_first_hour_absence(self):
@@ -165,11 +219,11 @@ class MateriaEnrollmentTests(unittest.TestCase):
                 metodo="Facial-Telefono",
             )
 
-        self.assertEqual(result["periodos_registrados"], [2, 3])
-        summary = database.obtener_resumen_asistencia(1, "2026-10-27")
+        self.assertEqual(result["periodos_registrados"], [2])
+        summary = self._resumen_en(datetime(2026, 10, 27, 11, 5, 0))
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Ausente", "Presente", "Presente"],
+            ["Ausente", "Presente", "Pendiente"],
         )
 
     def test_manual_period_change_is_not_overwritten_by_later_facial_frames(self):
@@ -195,25 +249,51 @@ class MateriaEnrollmentTests(unittest.TestCase):
                 metodo="Facial-Telefono",
             )
 
-        summary = database.obtener_resumen_asistencia(1, "2026-10-27")
+        summary = self._resumen_en(datetime(2026, 10, 27, 10, 7, 0))
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Presente", "Ausente", "Presente"],
+            ["Presente", "Ausente", "Pendiente"],
         )
 
-    def test_summary_marks_every_hour_absent_ten_minutes_after_class_start(self):
+    def test_summary_marks_only_the_elapsed_hour_absent_after_its_grace_period(self):
         with patch.object(database, "datetime", wraps=datetime) as clock:
-            clock.now.return_value = datetime(2026, 10, 27, 10, 10, 0)
+            clock.now.return_value = datetime(2026, 10, 27, 10, 10, 1)
             summary = database.obtener_resumen_asistencia(1, "2026-10-27")
 
         self.assertEqual(
             [period["estado"] for period in summary[0]["periodos"]],
-            ["Ausente", "Ausente", "Ausente"],
+            ["Ausente", "Pendiente", "Pendiente"],
         )
 
-    def test_background_absence_task_marks_all_periods_after_ten_minutes(self):
+    def test_background_absence_task_waits_until_after_inclusive_ten_minute_limit(self):
         updated = database.aplicar_ausencias_programadas(
             datetime(2026, 10, 27, 10, 10, 0)
+        )
+        self.assertEqual(updated, 0)
+
+        updated = database.aplicar_ausencias_programadas(
+            datetime(2026, 10, 27, 10, 10, 1)
+        )
+        conn = database.get_db()
+        statuses = [
+            row["estado"]
+            for row in conn.execute(
+                """
+                SELECT estado FROM asistencia_periodos
+                WHERE estudiante_id = ? AND materia_id = 1
+                  AND fecha = '2026-10-27'
+                ORDER BY periodo_indice
+                """,
+                (self.student_one,),
+            )
+        ]
+        conn.close()
+        self.assertEqual(updated, 1)
+        self.assertEqual(statuses, ["Ausente"])
+
+    def test_background_absence_task_marks_each_elapsed_hour_only(self):
+        updated = database.aplicar_ausencias_programadas(
+            datetime(2026, 10, 27, 11, 10, 1)
         )
 
         conn = database.get_db()
@@ -231,9 +311,9 @@ class MateriaEnrollmentTests(unittest.TestCase):
         ]
         conn.close()
         self.assertEqual(updated, 1)
-        self.assertEqual(statuses, ["Ausente", "Ausente", "Ausente"])
+        self.assertEqual(statuses, ["Ausente", "Ausente"])
 
-    def test_background_absence_task_does_not_backfill_after_class_ends(self):
+    def test_background_absence_task_backfills_all_elapsed_hours_after_class_ends(self):
         updated = database.aplicar_ausencias_programadas(
             datetime(2026, 10, 27, 13, 0, 0)
         )
@@ -248,8 +328,8 @@ class MateriaEnrollmentTests(unittest.TestCase):
             (self.student_one,),
         ).fetchone()[0]
         conn.close()
-        self.assertEqual(updated, 0)
-        self.assertEqual(count, 0)
+        self.assertEqual(updated, 1)
+        self.assertEqual(count, 3)
 
     def test_manual_attendance_rejects_invalid_status(self):
         with self.assertRaisesRegex(ValueError, "estado de asistencia válido"):

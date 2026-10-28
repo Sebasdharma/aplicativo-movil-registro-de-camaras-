@@ -1,11 +1,13 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
+from io import BytesIO
 from unittest.mock import patch
 
 import database
 import jwt
+from openpyxl import load_workbook
 
 _server_import_dir = tempfile.TemporaryDirectory()
 _server_import_db_patch = patch.object(
@@ -60,6 +62,84 @@ class AdminAuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         verify_token.assert_not_called()
+
+    def test_daily_excel_report_counts_one_absent_student_and_includes_hour_details(self):
+        conn = database.get_db()
+        conn.execute(
+            """
+            INSERT INTO estudiantes
+                (codigo_estudiantil, nombre_completo, nivel_paralelo)
+            VALUES ('XLSX-001', 'Estudiante de Prueba', 'Séptimo A')
+            """
+        )
+        estudiante_id = conn.execute(
+            "SELECT id FROM estudiantes WHERE codigo_estudiantil = 'XLSX-001'"
+        ).fetchone()["id"]
+        database.inscribir_estudiante_en_materia(
+            conn.cursor(), estudiante_id, 1
+        )
+        materia = conn.execute(
+            "SELECT horario FROM materias WHERE id = 1"
+        ).fetchone()
+        fecha = None
+        periodos = []
+        for offset in range(8):
+            candidate = (datetime.now().date() + timedelta(days=offset)).isoformat()
+            candidate_periodos = database.obtener_periodos_lectivos(
+                materia["horario"], candidate
+            )
+            if len(candidate_periodos) >= 2:
+                fecha = candidate
+                periodos = candidate_periodos
+                break
+        self.assertIsNotNone(fecha)
+
+        conn.executemany(
+            """
+            INSERT INTO asistencia_periodos (
+                estudiante_id, materia_id, fecha, periodo_indice,
+                bloque_indice, inicio, fin, estado, hora, metodo_registro
+            ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, 'Manual-Docente')
+            """,
+            [
+                (
+                    estudiante_id,
+                    fecha,
+                    periodo["indice"],
+                    periodo["bloque"],
+                    periodo["inicio"],
+                    periodo["fin"],
+                    "Presente" if periodo["indice"] == 1 else "Ausente",
+                    "10:05:00" if periodo["indice"] == 1 else "--:--:--",
+                )
+                for periodo in periodos
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        conn = database.get_db()
+        docente_id = conn.execute(
+            "SELECT id FROM docentes WHERE email_institucional = 'admin@upec.edu.ec'"
+        ).fetchone()["id"]
+        conn.close()
+        response = self.client.get(
+            "/api/asistencia/reporte/excel",
+            query_string={
+                "materia_id": 1,
+                "docente_id": docente_id,
+                "fecha": fecha,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.data), read_only=True)
+        sheet = workbook["Asistencia diaria"]
+        self.assertEqual(sheet["B5"].value, 1)
+        self.assertEqual(sheet["D5"].value, 1)
+        self.assertEqual(sheet["D8"].value, "Presente 10:05:00")
+        self.assertEqual(sheet.cell(8, sheet.max_column).value, "Sí")
+        workbook.close()
 
     def test_microsoft_login_rejects_invalid_identity_token(self):
         with patch.object(
