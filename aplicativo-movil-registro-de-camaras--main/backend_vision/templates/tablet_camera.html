@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#006b3c">
+  <title>AsisTech | Cámara para OpenCV</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, sans-serif;
+      background: #f3f5f7;
+      color: #161a18;
+    }
+    body { margin: 0; padding: 24px; }
+    main {
+      box-sizing: border-box;
+      max-width: 720px;
+      margin: 24px auto;
+      padding: 24px;
+      border: 1px solid #d5dad7;
+      border-radius: 18px;
+      background: white;
+      box-shadow: 0 8px 28px #17251d14;
+    }
+    h1 { margin-top: 0; color: #006b3c; font-size: 1.5rem; }
+    p { line-height: 1.5; }
+    video { display: block; width: 100%; max-height: 55vh; background: #171a18; border-radius: 12px; }
+    button {
+      width: 100%;
+      min-height: 52px;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 28px;
+      background: #006b3c;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+    }
+    #status { min-height: 1.5em; font-weight: 600; }
+    #result { color: #006b3c; }
+    #result.warning { color: #a34a00; }
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      main { margin: 12px auto; padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Cámara OpenCV</h1>
+    <p>Usa la cámara frontal. Permite el acceso una vez y mantén esta página abierta para iniciar o detener el escaneo desde el teléfono.</p>
+    <video id="camera" autoplay muted playsinline></video>
+    <button id="connect" type="button">Permitir cámara y conectar</button>
+    <p id="status" role="status">La cámara todavía no está conectada.</p>
+    <p id="result" aria-live="polite"></p>
+  </main>
+  <script>
+    const api = window.location.origin;
+    const cameraIdKey = 'asistech_web_tablet_camera_id';
+    const cameraId = localStorage.getItem(cameraIdKey) || crypto.randomUUID();
+    localStorage.setItem(cameraIdKey, cameraId);
+    const video = document.getElementById('camera');
+    const connectButton = document.getElementById('connect');
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    const canvas = document.createElement('canvas');
+    let stream;
+    let connected = false;
+    let scanning = false;
+    let polling = false;
+    let lastReportedResult = '';
+    let lastAnnouncedResult = '';
+
+    function showStatus(message) {
+      status.textContent = message;
+    }
+
+    function announce(message) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = 'es-ES';
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    async function reportResult(type, message, key) {
+      if (key === lastReportedResult) return;
+      const response = await fetch(`${api}/api/camara/tablet/resultado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tablet_id: cameraId,
+          evento_id: crypto.randomUUID(),
+          tipo: type,
+          mensaje: message,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.mensaje || 'No se pudo enviar el resultado al teléfono.');
+      lastReportedResult = key;
+    }
+
+    async function sendFrame(materiaId) {
+      if (!stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const foto = canvas.toDataURL('image/jpeg', 0.65).split(',', 2)[1];
+      const response = await fetch(`${api}/api/camara/telefono/escanear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materia_id: materiaId, foto, rotacion: 0 }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.mensaje || 'No se pudo analizar el fotograma.');
+      const faces = data.rostros || [];
+      const outsideSchedule = faces.find((face) => face.estado === 'fuera_horario');
+      const identified = faces.filter((face) => face.estado === 'identificado');
+      const verifying = faces.some((face) => face.estado === 'verificando');
+      let type = '';
+      let message = '';
+      let eventKey = '';
+
+      if (outsideSchedule) {
+        type = 'fuera_horario';
+        eventKey = `${type}:${outsideSchedule.codigo || outsideSchedule.nombre}`;
+        message = `Estudiante reconocido: ${outsideSchedule.nombre || 'Estudiante'}. `
+          + `Está fuera del horario de clases y no se registró la asistencia. `
+          + (outsideSchedule.mensaje || 'Verifica el horario de clase.');
+      } else if (identified.length) {
+        type = 'reconocido';
+        eventKey = `${type}:${identified.map((face) => face.codigo || face.nombre).join(',')}`;
+        const names = [...new Set(identified.map((face) => face.nombre || 'Estudiante'))];
+        const newAttendance = identified.some((face) => face.registro_nuevo);
+        const alreadyPresent = identified.every((face) => face.asistencia_registrada);
+        message = newAttendance
+          ? `Se reconoció a ${names.join(', ')}. Asistencia tomada exitosamente.`
+          : alreadyPresent
+            ? `Se reconoció a ${names.join(', ')}. El estudiante ya consta presente.`
+            : `Se reconoció a ${names.join(', ')}.`;
+      } else if (verifying) {
+        result.classList.remove('warning');
+        result.textContent = 'Confirmando la identidad; mantén el rostro centrado...';
+        return;
+      } else if (faces.length) {
+        type = 'desconocido';
+        eventKey = type;
+        message = 'Rostro detectado, pero no se reconoce al estudiante.';
+      } else {
+        result.textContent = '';
+        result.classList.remove('warning');
+        lastReportedResult = '';
+        lastAnnouncedResult = '';
+        return;
+      }
+
+      result.textContent = message;
+      result.classList.toggle('warning', type === 'fuera_horario' || type === 'desconocido');
+      if (eventKey !== lastAnnouncedResult) {
+        lastAnnouncedResult = eventKey;
+        announce(message);
+      }
+      try {
+        const previousResultKey = lastReportedResult;
+        if (eventKey !== previousResultKey) {
+          await reportResult(type, message, eventKey);
+        }
+      } catch (error) {
+        showStatus(`Escaneo activo; no se pudo enviar el resultado al teléfono: ${error.message}`);
+      }
+    }
+
+    async function scanLoop(materiaId) {
+      while (scanning) {
+        try {
+          await sendFrame(materiaId);
+        } catch (error) {
+          showStatus(`Error de escaneo: ${error.message}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 900));
+      }
+    }
+
+    async function pollCommand() {
+      if (!connected || polling) return;
+      polling = true;
+      try {
+        const response = await fetch(`${api}/api/camara/tablet/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            tablet_id: cameraId,
+            nombre: 'Tablet Chrome',
+            activa: scanning,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.mensaje || 'No se pudo conectar al servidor.');
+        const command = data.command;
+        if (command?.action === 'iniciar' && Number.isInteger(command.materia_id) && !scanning) {
+          scanning = true;
+          showStatus('Escaneo OpenCV activo. Puedes detenerlo desde el teléfono.');
+          void scanLoop(command.materia_id);
+        } else if (command?.action === 'detener' && scanning) {
+          scanning = false;
+          result.textContent = '';
+          showStatus('Escaneo detenido. La tablet sigue conectada.');
+        } else if (!scanning) {
+          showStatus('Tablet conectada. Esperando la orden del teléfono.');
+        }
+      } catch (error) {
+        showStatus(`Sin conexión con el servidor: ${error.message}`);
+      } finally {
+        polling = false;
+      }
+    }
+
+    connectButton.addEventListener('click', async () => {
+      connectButton.disabled = true;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'user' }, width: { ideal: 640 } },
+        });
+        video.srcObject = stream;
+        connected = true;
+        connectButton.textContent = 'Cámara conectada';
+        showStatus('Conectando con el servidor…');
+        await pollCommand();
+      } catch (error) {
+        connectButton.disabled = false;
+        showStatus(`No se pudo abrir la cámara: ${error.message}`);
+      }
+    });
+
+    window.setInterval(pollCommand, 2000);
+    window.addEventListener('pagehide', () => {
+      scanning = false;
+      stream?.getTracks().forEach((track) => track.stop());
+    });
+  </script>
+</body>
+</html>

@@ -201,6 +201,63 @@ class ApiService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getTabletCameras() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/api/camara/tablet/dispositivos'))
+        .timeout(const Duration(seconds: 4));
+    if (response.statusCode != 200) {
+      throw Exception('No se pudieron consultar las tablets conectadas.');
+    }
+    return (json.decode(response.body) as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> heartbeatTabletCamera({
+    required String tabletId,
+    required String name,
+    required bool active,
+    bool enabled = true,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/camara/tablet/heartbeat'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'tablet_id': tabletId,
+            'nombre': name,
+            'activa': active,
+            'habilitada': enabled,
+          }),
+        )
+        .timeout(const Duration(seconds: 4));
+    final Map<String, dynamic> result =
+        json.decode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200 && result['status'] == 'ok') return result;
+    throw Exception(result['mensaje'] ?? 'No se pudo conectar la tablet.');
+  }
+
+  static Future<Map<String, dynamic>> commandTabletCamera({
+    required String tabletId,
+    required String action,
+    required int materiaId,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/camara/tablet/comando'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'tablet_id': tabletId,
+            'action': action,
+            'materia_id': materiaId,
+          }),
+        )
+        .timeout(const Duration(seconds: 4));
+    final Map<String, dynamic> result =
+        json.decode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200 && result['status'] == 'ok') return result;
+    throw Exception(result['mensaje'] ?? 'No se pudo enviar la orden.');
+  }
+
   // Iniciar escaneo de cámara / dispositivo de hardware
   static Future<Map<String, dynamic>> iniciarEscaneoCamara(
       {int materiaId = 1, int? dispositivoId}) async {

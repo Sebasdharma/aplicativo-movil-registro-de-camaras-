@@ -13,3 +13,4 @@ build/
 **/__pycache__/
 backend_vision/data/*.db
 backend_vision/dataset_estudiantes/
+backend_vision/certs/*

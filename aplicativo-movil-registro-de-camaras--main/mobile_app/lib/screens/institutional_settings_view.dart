@@ -249,13 +249,9 @@ class _InstitutionalSettingsViewState extends State<InstitutionalSettingsView> {
                   'Reporte diario de asistencia',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Exporta una materia por archivo, con el detalle de cada hora '
-                  'y el total de estudiantes con faltas, sin duplicarlos.',
-                ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
+                  isExpanded: true,
                   initialValue: _materiaReporteId,
                   decoration: const InputDecoration(
                     labelText: 'Materia',

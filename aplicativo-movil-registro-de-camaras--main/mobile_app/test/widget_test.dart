@@ -111,6 +111,7 @@ void main() {
       MaterialApp(
         home: InstitutionalSettingsView(
           docente: docente,
+          materias: const [],
           isDarkMode: false,
           onThemeModeChanged: (enabled) async {
             darkModeEnabled = enabled;
@@ -122,6 +123,14 @@ void main() {
     );
 
     expect(find.text('Jordy Lema'), findsOneWidget);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+
+    expect(darkModeEnabled, isTrue);
+
+    await tester.scrollUntilVisible(find.text('Cambiar cuenta'), 300);
+    await tester.pumpAndSettle();
+
     expect(find.text('Cambiar cuenta'), findsOneWidget);
     expect(find.text('Cerrar sesión'), findsOneWidget);
     expect(find.text('Privacidad y permisos'), findsOneWidget);
@@ -143,11 +152,6 @@ void main() {
       ),
       findsOneWidget,
     );
-
-    await tester.tap(find.byType(SwitchListTile));
-    await tester.pumpAndSettle();
-
-    expect(darkModeEnabled, isTrue);
   });
 
   testWidgets('privacy screen explains data use and required permissions',
@@ -165,6 +169,7 @@ void main() {
       MaterialApp(
         home: InstitutionalSettingsView(
           docente: docente,
+          materias: const [],
           isDarkMode: false,
           onThemeModeChanged: (_) async {},
           onChangeAccount: () {},
@@ -173,11 +178,54 @@ void main() {
       ),
     );
 
+    await tester.scrollUntilVisible(find.text('Privacidad y permisos'), 300);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Privacidad y permisos'));
     await tester.pumpAndSettle();
 
     expect(find.text('Aceptación y autorización facial'), findsOneWidget);
     expect(find.text('Quién administra los datos'), findsOneWidget);
+  });
+
+  testWidgets('materia selector fits a narrow screen', (tester) async {
+    final docente = Docente(
+      id: 2,
+      email: 'jordy.lema@upec.edu.ec',
+      nombreCompleto: 'Jordy Lema',
+      cedula: '',
+      facultad: '',
+      carrera: '',
+    );
+    final materia = Materia(
+      id: 1,
+      codigo: 'COMP-705',
+      nombre: 'Redes de Computadoras y Seguridades',
+      docenteNombre: docente.nombreCompleto,
+      horario: '',
+      aula: '',
+      periodo: '',
+      nivelParalelo: '',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 320,
+          child: InstitutionalSettingsView(
+            docente: docente,
+            materias: [materia],
+            isDarkMode: false,
+            onThemeModeChanged: (_) async {},
+            onChangeAccount: () {},
+            onLogout: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('dark settings theme uses readable text colors', (tester) async {
@@ -197,6 +245,7 @@ void main() {
         themeMode: ThemeMode.dark,
         home: InstitutionalSettingsView(
           docente: docente,
+          materias: const [],
           isDarkMode: true,
           onThemeModeChanged: (_) async {},
           onChangeAccount: () {},
@@ -205,7 +254,10 @@ void main() {
       ),
     );
 
+    await tester.scrollUntilVisible(find.text('Jordy Lema'), 300);
     final name = tester.widget<Text>(find.text('Jordy Lema'));
+    await tester.scrollUntilVisible(find.text('CUENTA'), 300);
+    await tester.pumpAndSettle();
     final accountHeading = tester.widget<Text>(find.text('CUENTA'));
     expect(name.style?.color, const Color(0xFFF1F5F2));
     expect(accountHeading.style?.color, const Color(0xFF72C99A));

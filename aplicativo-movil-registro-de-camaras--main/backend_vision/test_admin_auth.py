@@ -34,6 +34,8 @@ class AdminAuthTests(unittest.TestCase):
         self.addCleanup(self.db_path_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
         server.init_db()
+        with server.tablet_cameras_lock:
+            server.tablet_cameras.clear()
         self.client = server.app.test_client()
 
     def test_admin_login_returns_generic_administrator_profile(self):
@@ -254,6 +256,167 @@ class ManualAttendanceApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["status"], "error")
+
+
+class TabletCameraApiTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        db_path_patch = patch.object(
+            database,
+            "DB_PATH",
+            os.path.join(self.temp_dir.name, "tablet-test.db"),
+        )
+        db_path_patch.start()
+        self.addCleanup(db_path_patch.stop)
+        self.addCleanup(self.temp_dir.cleanup)
+        server.init_db()
+        with server.tablet_cameras_lock:
+            server.tablet_cameras.clear()
+        self.client = server.app.test_client()
+
+    def test_browser_camera_page_is_available(self):
+        response = self.client.get("/tablet-camera")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Permitir c\xc3\xa1mara y conectar", response.data)
+        self.assertIn(b"facingMode: { ideal: 'user' }", response.data)
+        self.assertIn(b"speechSynthesis.speak(utterance)", response.data)
+        self.assertIn(b"fuera del horario de clases", response.data)
+        self.assertIn(b"/api/camara/tablet/resultado", response.data)
+
+    def test_phone_can_discover_tablet_and_deliver_start_command_once(self):
+        heartbeat = self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-001",
+                "nombre": "Tablet AsisTech",
+                "activa": False,
+            },
+        )
+        self.assertEqual(heartbeat.status_code, 200)
+
+        devices = self.client.get("/api/camara/tablet/dispositivos")
+        self.assertEqual(devices.status_code, 200)
+        self.assertEqual(devices.get_json()[0]["tablet_id"], "tablet-001")
+
+        command = self.client.post(
+            "/api/camara/tablet/comando",
+            json={
+                "tablet_id": "tablet-001",
+                "action": "iniciar",
+                "materia_id": 1,
+            },
+        )
+        self.assertEqual(command.status_code, 200)
+
+        received = self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-001",
+                "nombre": "Tablet AsisTech",
+                "activa": True,
+            },
+        )
+        self.assertEqual(
+            received.get_json()["command"],
+            {"action": "iniciar", "materia_id": 1},
+        )
+        next_poll = self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-001",
+                "nombre": "Tablet AsisTech",
+                "activa": True,
+            },
+        )
+        self.assertIsNone(next_poll.get_json()["command"])
+
+    def test_tablet_can_publish_recognition_result_to_phone(self):
+        self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-resultado",
+                "nombre": "Tablet Chrome",
+                "activa": True,
+            },
+        )
+
+        response = self.client.post(
+            "/api/camara/tablet/resultado",
+            json={
+                "tablet_id": "tablet-resultado",
+                "evento_id": "evento-001",
+                "tipo": "fuera_horario",
+                "mensaje": (
+                    "Estudiante reconocido: Prueba. Está fuera del horario "
+                    "de clases y no se registró la asistencia."
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        devices = self.client.get("/api/camara/tablet/dispositivos").get_json()
+        self.assertEqual(
+            devices[0]["resultado"],
+            {
+                "evento_id": "evento-001",
+                "tipo": "fuera_horario",
+                "mensaje": (
+                    "Estudiante reconocido: Prueba. Está fuera del horario "
+                    "de clases y no se registró la asistencia."
+                ),
+            },
+        )
+
+    def test_tablet_result_rejects_unregistered_camera(self):
+        response = self.client.post(
+            "/api/camara/tablet/resultado",
+            json={
+                "tablet_id": "tablet-desconocida",
+                "evento_id": "evento-001",
+                "tipo": "reconocido",
+                "mensaje": "Se reconoció a Estudiante de Prueba.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_phone_cannot_start_a_tablet_that_is_not_online(self):
+        response = self.client.post(
+            "/api/camara/tablet/comando",
+            json={
+                "tablet_id": "tablet-offline",
+                "action": "iniciar",
+                "materia_id": 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_tablet_can_unregister_itself(self):
+        self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-001",
+                "nombre": "Tablet AsisTech",
+                "activa": False,
+            },
+        )
+        response = self.client.post(
+            "/api/camara/tablet/heartbeat",
+            json={
+                "tablet_id": "tablet-001",
+                "nombre": "Tablet AsisTech",
+                "activa": False,
+                "habilitada": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.client.get("/api/camara/tablet/dispositivos").get_json(),
+            [],
+        )
 
 
 if __name__ == "__main__":

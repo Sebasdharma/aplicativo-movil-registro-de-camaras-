@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,13 +9,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/privacy_acceptance_screen.dart';
+import 'services/api_service.dart';
 
 const _privacyAcceptanceVersion = '2026-10-25-v1';
 const _privacyAcceptanceVersionKey = 'asistech_privacy_version';
 const _privacyAcceptanceDateKey = 'asistech_privacy_accepted_at';
+const _localCaCertificateAsset =
+    'android/app/src/main/res/raw/asistech_local_ca.crt';
+const _localServerCertificateAsset =
+    'android/app/src/main/res/raw/asistech_local_server.crt';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _configureLocalHttpCertificateTrust();
   var initialThemeMode = ThemeMode.light;
   var initialPrivacyAccepted = false;
   try {
@@ -52,6 +62,62 @@ Future<void> main() async {
       initialPrivacyAccepted: initialPrivacyAccepted,
     ),
   );
+}
+
+Future<void> _configureLocalHttpCertificateTrust() async {
+  try {
+    final certificate = await rootBundle.load(_localCaCertificateAsset);
+    final serverCertificatePem =
+        await rootBundle.loadString(_localServerCertificateAsset);
+    final serverCertificateBase64 = serverCertificatePem
+        .replaceAll('-----BEGIN CERTIFICATE-----', '')
+        .replaceAll('-----END CERTIFICATE-----', '')
+        .replaceAll(RegExp(r'\s'), '');
+    final serverCertificateDer = base64Decode(serverCertificateBase64);
+    final securityContext = SecurityContext(withTrustedRoots: true)
+      ..setTrustedCertificatesBytes(certificate.buffer.asUint8List());
+    HttpOverrides.global = _LocalCertificateHttpOverrides(
+      securityContext,
+      Uri.parse(ApiService.baseUrl),
+      serverCertificateDer,
+    );
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'AsisTech HTTPS configuration',
+        context: ErrorDescription(
+          'while configuring trust for the local backend certificate',
+        ),
+      ),
+    );
+  }
+}
+
+class _LocalCertificateHttpOverrides extends HttpOverrides {
+  final SecurityContext _securityContext;
+  final Uri _apiUri;
+  final List<int> _serverCertificateDer;
+
+  _LocalCertificateHttpOverrides(
+    this._securityContext,
+    this._apiUri,
+    this._serverCertificateDer,
+  );
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(_securityContext)
+      ..badCertificateCallback = (certificate, host, port) {
+        return _apiUri.scheme == 'https' &&
+            host == _apiUri.host &&
+            port == _apiUri.port &&
+            listEquals(certificate.der, _serverCertificateDer) &&
+            DateTime.now().isAfter(certificate.startValidity) &&
+            DateTime.now().isBefore(certificate.endValidity);
+      };
+  }
 }
 
 class AsisTechApp extends StatefulWidget {

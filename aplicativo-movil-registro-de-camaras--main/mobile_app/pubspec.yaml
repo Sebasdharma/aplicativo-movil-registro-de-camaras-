@@ -31,12 +31,11 @@ dev_dependencies:
 
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: assets/images/asistech_logo_cropped.png
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: assets/images/asistech_adaptive_foreground.png
   min_sdk_android: 21
-  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
@@ -45,3 +44,5 @@ flutter:
     - assets/images/asistech_logo_cropped.png
     - assets/images/microsoft_logo.png
     - assets/images/carchito.png
+    - android/app/src/main/res/raw/asistech_local_ca.crt
+    - android/app/src/main/res/raw/asistech_local_server.crt

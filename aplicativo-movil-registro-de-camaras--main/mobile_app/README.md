@@ -1,8 +1,7 @@
 # Aplicación móvil AsisTech
 
-Esta es la aplicación multiplataforma del proyecto. La interfaz está
-implementada en Flutter para Android e iOS: acceso docente, asistencia,
-cámaras, Carchito y configuración.
+Esta es la aplicación Android del proyecto, implementada en Flutter: acceso
+docente, asistencia, cámaras, Carchito y configuración.
 
 La pantalla conserva la opción de **Microsoft 365** y el acceso temporal como
 **Administrador** para pruebas locales. El inicio real de Microsoft 365 requiere
@@ -35,7 +34,7 @@ en el dispositivo. Esa aceptación no se envía al backend ni sustituye la
 autorización específica del estudiante (o su representante) para guardar una
 foto facial, que se solicita por separado al enrolar el rostro.
 
-El icono de la aplicación para Android e iOS se genera desde
+El icono de la aplicación para Android se genera desde
 `assets/images/asistech_logo_cropped.png`. El icono de 512 × 512 para la ficha
 de Google Play está en `assets/images/asistech_play_store_icon.png`; generar los
 iconos móviles requiere `dart run flutter_launcher_icons`. Esto prepara los
@@ -107,10 +106,27 @@ disponible en el teléfono o emulador, cuyas condiciones dependen de su
 proveedor; la transcripción se envía al backend. Los fotogramas del escaneo
 facial también se envían al backend configurado.
 
-La opción «Escanear con Cámara OpenCV en Vivo» usa la cámara conectada al
-equipo que ejecuta el backend y se puede finalizar con «Terminar escaneo
-OpenCV». El escaneo con la cámara del teléfono tiene su propio botón
-«Detener escaneo».
+Para usar la cámara de una tablet sin instalar AsisTech en ella, abre Chrome
+en la tablet y visita `https://IP_DEL_BACKEND:5000/tablet-camera`. Pulsa
+**Permitir cámara y conectar**, concede el permiso de cámara y deja esa página
+abierta. En el teléfono, abre **Cámaras** y pulsa **Escanear con OpenCV
+(tablet)**; el teléfono puede detenerla desde la tarjeta de la tablet. Ambos
+dispositivos deben estar en la misma Wi-Fi.
+
+La página de cámara requiere HTTPS; el backend local incluye un generador de
+certificados para esa red. Instala `backend_vision/certs/local-ca.crt` como
+certificado de CA de usuario tanto en la tablet (para Chrome) como en el
+teléfono (para que AsisTech confíe en el backend). Conserva las claves
+`local-ca.key` y `server.key` únicamente en la computadora del backend. Luego
+inicia el backend con `ASISTECH_TLS_CERT` y `ASISTECH_TLS_KEY`, y compila la app
+con `API_BASE_URL=https://IP_DEL_BACKEND:5000`. Consulta la guía general del
+repositorio para generar el certificado e iniciar el servidor HTTPS. No uses
+`10.0.2.2` en dispositivos físicos. Si Windows Firewall lo solicita, permite
+el acceso al puerto TCP 5000 solo en la red privada.
+
+La opción **Escanear con cámara OpenCV del PC** sigue usando la cámara
+conectada al equipo que ejecuta el backend. **Usar cámara de este dispositivo**
+abre un escaneo directo en el teléfono o tablet que se está utilizando.
 
 La foto frontal y la autorización solo son necesarias cuando se añade una
 referencia biométrica. Se pueden agregar hasta cinco fotos autorizadas por
@@ -130,12 +146,12 @@ sin identificar. La app anuncia por voz el resultado solo después de recibir
 la confirmación del backend. Revisa manualmente los resultados y no uses una
 coincidencia facial como única prueba de asistencia.
 
-La compilación y firma de iOS requieren macOS y Xcode. Antes de publicar,
-configura la firma, los identificadores de tienda, la autenticación de
-Microsoft 365 y la URL HTTPS pública del backend. Consulta también la
+Antes de publicar, configura la firma de Android, el identificador de la
+aplicación, la autenticación de Microsoft 365 y la URL HTTPS pública del
+backend. Consulta también la
 [guía general del proyecto](../README.md).
 
-## Configuracion del backend para iOS y Android
+## Configuracion del backend para Android
 
 Para usar el backend desplegado, define su URL HTTPS al ejecutar o compilar la
 app:
@@ -143,20 +159,18 @@ app:
 ```bash
 flutter run --dart-define=API_BASE_URL=https://tu-servidor.example
 flutter build appbundle --dart-define=API_BASE_URL=https://tu-servidor.example
-flutter build ios --dart-define=API_BASE_URL=https://tu-servidor.example
 ```
 
-Sin esa variable, Android Emulator usa `10.0.2.2` y el simulador iOS usa
-`127.0.0.1` como direcciones de desarrollo. En un dispositivo fisico, usa la
-URL HTTPS accesible desde ese dispositivo. Para pruebas en una red Wi-Fi local, usa la IPv4 actual del adaptador Wi-Fi de
-la computadora que ejecuta el backend (en Windows puedes verla con
-`ipconfig`). Por ejemplo, en la red universitaria actual:
+Sin esa variable, Android Emulator usa `10.0.2.2` como dirección de
+desarrollo. En un dispositivo físico, usa la URL HTTPS accesible desde ese
+dispositivo. Para pruebas en una red Wi-Fi local, usa la IPv4 actual del
+adaptador Wi-Fi de la computadora que ejecuta el backend (en Windows puedes
+verla con `ipconfig`). Por ejemplo:
 
 ```bash
-flutter build apk --release --dart-define=API_BASE_URL=http://172.20.237.44:5000
+flutter build apk --release --dart-define=API_BASE_URL=https://IP_DEL_BACKEND:5000
 ```
 
-Conecta el telefono a la misma red Wi-Fi y permite el puerto TCP 5000 en el
-firewall solo desde la red local. La IP puede cambiar al cambiar de red o al
-reconectar la computadora; actualizala al compilar de nuevo. La compilacion de
-iOS requiere macOS y Xcode.
+Para desarrollo HTTP sin la página web, el teléfono puede seguir usando la
+dirección local por HTTP. La IP puede cambiar al cambiar de red o reconectar la
+computadora; al cambiarla, regenera el certificado y compila de nuevo la app.

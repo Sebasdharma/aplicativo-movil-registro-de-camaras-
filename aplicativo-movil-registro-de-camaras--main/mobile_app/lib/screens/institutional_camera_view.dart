@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants/app_colors.dart';
 import '../models/models.dart';
@@ -23,16 +28,34 @@ class InstitutionalCameraView extends StatefulWidget {
 }
 
 class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
+  final FlutterTts _remoteResultTts = FlutterTts();
   List<DispositivoIoT> _devices = [];
   bool _loading = true;
   bool _startingCamera = false;
   bool _opencvScanActive = false;
   bool _autoStartHandled = false;
+  bool _tabletCameraEnabled = false;
+  bool _tabletRoleChecked = false;
+  bool _pollingTabletCommand = false;
+  bool _remoteScanRouteOpen = false;
+  String? _tabletCameraId;
+  String? _tabletConnectionError;
+  List<Map<String, dynamic>> _remoteTablets = [];
+  final Map<String, String> _lastRemoteSpokenEvents = {};
+  Timer? _tabletHeartbeatTimer;
+  Timer? _remoteTabletsTimer;
+  late final Future<void> _remoteVoiceInitialization;
 
   @override
   void initState() {
     super.initState();
+    _remoteVoiceInitialization = _initializeRemoteVoice();
     _loadDevices();
+    _refreshRemoteTablets();
+    _remoteTabletsTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshRemoteTablets(),
+    );
     if (widget.autoStartPhoneCamera) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_autoStartHandled) {
@@ -40,6 +63,178 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
           _scanWithPhoneCamera();
         }
       });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabletHeartbeatTimer?.cancel();
+    _remoteTabletsTimer?.cancel();
+    unawaited(_remoteResultTts.stop());
+    super.dispose();
+  }
+
+  Future<void> _initializeRemoteVoice() async {
+    try {
+      await _remoteResultTts.setLanguage('es-ES');
+      await _remoteResultTts.setSpeechRate(0.48);
+      await _remoteResultTts.setVolume(1.0);
+    } catch (error) {
+      debugPrint('No se pudo preparar la voz de resultados OpenCV: $error');
+    }
+  }
+
+  Future<void> _announceRemoteResult(String message) async {
+    try {
+      await _remoteVoiceInitialization;
+      if (!mounted) return;
+      await _remoteResultTts.stop();
+      await _remoteResultTts.speak(message);
+    } catch (error) {
+      debugPrint(
+          'No se pudo anunciar el resultado de la cámara remota: $error');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_tabletRoleChecked) return;
+    _tabletRoleChecked = true;
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_initializeTabletCamera(isTablet));
+    });
+  }
+
+  Future<void> _initializeTabletCamera(bool isTablet) async {
+    final preferences = await SharedPreferences.getInstance();
+    final enabled = isTablet ||
+        (preferences.getBool('asistech_tablet_camera_enabled') ?? false);
+    if (!enabled || !mounted) return;
+    final id = preferences.getString('asistech_tablet_camera_id') ??
+        _newTabletCameraId();
+    await preferences.setBool('asistech_tablet_camera_enabled', true);
+    await preferences.setString('asistech_tablet_camera_id', id);
+    if (!mounted) return;
+    setState(() {
+      _tabletCameraId = id;
+      _tabletCameraEnabled = true;
+    });
+    _startTabletHeartbeat();
+  }
+
+  String _newTabletCameraId() {
+    final random = Random.secure();
+    return List<int>.generate(16, (_) => random.nextInt(256))
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  void _startTabletHeartbeat() {
+    _tabletHeartbeatTimer?.cancel();
+    unawaited(_pollTabletCommand());
+    _tabletHeartbeatTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _pollTabletCommand(),
+    );
+  }
+
+  Future<void> _pollTabletCommand() async {
+    final id = _tabletCameraId;
+    if (!_tabletCameraEnabled || id == null || _pollingTabletCommand) return;
+    _pollingTabletCommand = true;
+    try {
+      final response = await ApiService.heartbeatTabletCamera(
+        tabletId: id,
+        name: 'Tablet AsisTech',
+        active: _remoteScanRouteOpen,
+      );
+      if (mounted && _tabletConnectionError != null) {
+        setState(() => _tabletConnectionError = null);
+      }
+      final command = response['command'] as Map<String, dynamic>?;
+      if (command == null || !mounted) return;
+      if (command['action'] == 'iniciar' && !_remoteScanRouteOpen) {
+        final materiaId = command['materia_id'];
+        if (materiaId is int) {
+          unawaited(_scanWithPhoneCamera(
+            materiaId: materiaId,
+            remotelyStarted: true,
+          ));
+        }
+      } else if (command['action'] == 'detener' &&
+          _remoteScanRouteOpen &&
+          Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      if (mounted && _tabletConnectionError == null) {
+        setState(() => _tabletConnectionError = error.toString());
+      }
+    } finally {
+      _pollingTabletCommand = false;
+    }
+  }
+
+  Future<void> _refreshRemoteTablets() async {
+    try {
+      final devices = await ApiService.getTabletCameras();
+      if (!mounted) return;
+      for (final tablet in devices) {
+        final tabletId = tablet['tablet_id'] as String?;
+        final result = tablet['resultado'];
+        if (tabletId == null || result is! Map<String, dynamic>) continue;
+        final eventId = result['evento_id']?.toString();
+        final message = result['mensaje']?.toString();
+        if (eventId == null ||
+            message == null ||
+            message.isEmpty ||
+            _lastRemoteSpokenEvents[tabletId] == eventId) {
+          continue;
+        }
+        _lastRemoteSpokenEvents[tabletId] = eventId;
+        unawaited(_announceRemoteResult(message));
+      }
+      if (mounted) setState(() => _remoteTablets = devices);
+    } catch (error) {
+      debugPrint('No se pudieron consultar las tablets: $error');
+    }
+  }
+
+  Future<void> _commandRemoteTablet(
+    Map<String, dynamic> tablet,
+    String action,
+  ) async {
+    if (_startingCamera) return;
+    final tabletId = tablet['tablet_id'] as String?;
+    if (tabletId == null) return;
+    setState(() => _startingCamera = true);
+    try {
+      final response = await ApiService.commandTabletCamera(
+        tabletId: tabletId,
+        action: action,
+        materiaId: widget.materiaId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            response['mensaje']?.toString() ?? 'Se envió la orden a la tablet.',
+          ),
+        ),
+      );
+      await _refreshRemoteTablets();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo controlar la tablet: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _startingCamera = false);
+      }
     }
   }
 
@@ -100,6 +295,39 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
     }
   }
 
+  Future<void> _startOpenCvScan() async {
+    final remoteTablets = _remoteTablets
+        .where((tablet) => tablet['tablet_id'] != _tabletCameraId)
+        .toList();
+    if (remoteTablets.isEmpty) {
+      await _startScan();
+      return;
+    }
+
+    Map<String, dynamic>? selectedTablet;
+    if (remoteTablets.length == 1) {
+      selectedTablet = remoteTablets.single;
+    } else {
+      selectedTablet = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Selecciona la tablet cámara'),
+          children: [
+            for (final tablet in remoteTablets)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, tablet),
+                child: Text(tablet['nombre'] as String? ?? 'Tablet Android'),
+              ),
+          ],
+        ),
+      );
+    }
+    if (selectedTablet == null || !mounted) return;
+    final action =
+        selectedTablet['estado'] == 'Transmitiendo' ? 'detener' : 'iniciar';
+    await _commandRemoteTablet(selectedTablet, action);
+  }
+
   Future<void> _stopOpenCvScan() async {
     if (_startingCamera) return;
     setState(() => _startingCamera = true);
@@ -130,21 +358,34 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
     }
   }
 
-  Future<void> _scanWithPhoneCamera() async {
-    if (_startingCamera) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => LiveFaceScanScreen(
-          materiaId: widget.materiaId,
-          onAttendanceRegistered: () => widget.onAttendanceRegistered?.call(),
+  Future<void> _scanWithPhoneCamera({
+    int? materiaId,
+    bool remotelyStarted = false,
+  }) async {
+    if (_startingCamera && !remotelyStarted) return;
+    if (remotelyStarted) _remoteScanRouteOpen = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => LiveFaceScanScreen(
+            materiaId: materiaId ?? widget.materiaId,
+            onAttendanceRegistered: () => widget.onAttendanceRegistered?.call(),
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (remotelyStarted) _remoteScanRouteOpen = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final remoteScanActive = _remoteTablets.any(
+      (tablet) =>
+          tablet['tablet_id'] != _tabletCameraId &&
+          tablet['estado'] == 'Transmitiendo',
+    );
     if (_loading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.upecGreen),
@@ -187,7 +428,7 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
                   color: AppColors.upecGreen,
                   child: Text(
                     _opencvScanActive ? 'ESCANEO EN VIVO' : 'OPENCV ACTIVO',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 8,
                       fontWeight: FontWeight.w900,
@@ -198,7 +439,41 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
             ),
           ),
           const SizedBox(height: 10),
-          if (_devices.isEmpty)
+          if (_tabletCameraEnabled && _tabletConnectionError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Cámara sin conexión: $_tabletConnectionError',
+                style: TextStyle(color: colors.error, fontSize: 10),
+              ),
+            ),
+          const SizedBox(height: 10),
+          if (_remoteTablets
+              .any((tablet) => tablet['tablet_id'] != _tabletCameraId)) ...[
+            Text(
+              'Tablets disponibles para OpenCV',
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+          for (final tablet in _remoteTablets)
+            if (tablet['tablet_id'] != _tabletCameraId) ...[
+              _RemoteTabletCard(
+                tablet: tablet,
+                busy: _startingCamera,
+                onCommand: (action) => _commandRemoteTablet(tablet, action),
+              ),
+              const SizedBox(height: 8),
+            ],
+          if (_devices.isEmpty &&
+              !_tabletCameraEnabled &&
+              !_remoteTablets.any(
+                (tablet) => tablet['tablet_id'] != _tabletCameraId,
+              ))
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 30),
               child: Text(
@@ -223,9 +498,9 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
                   ? null
                   : _opencvScanActive
                       ? _stopOpenCvScan
-                      : () => _startScan(),
+                      : _startOpenCvScan,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _opencvScanActive
+                backgroundColor: _opencvScanActive || remoteScanActive
                     ? Colors.red.shade700
                     : AppColors.upecGreen,
                 foregroundColor: Colors.white,
@@ -244,16 +519,20 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
                       ),
                     )
                   : Icon(
-                      _opencvScanActive
+                      _opencvScanActive || remoteScanActive
                           ? Icons.stop_circle_outlined
                           : Icons.camera_alt,
                       size: 17,
                     ),
               label: Text(
-                _opencvScanActive
+                _opencvScanActive || remoteScanActive
                     ? 'Detener escaneo'
-                    : 'Escanear con Cámara OpenCV en Vivo',
-                style: TextStyle(
+                    : _remoteTablets.any(
+                        (tablet) => tablet['tablet_id'] != _tabletCameraId,
+                      )
+                        ? 'Escanear con OpenCV (tablet)'
+                        : 'Escanear con cámara OpenCV',
+                style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: Colors.white),
@@ -278,7 +557,7 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
               label: Text(
                 _startingCamera
                     ? 'Procesando escaneo...'
-                    : 'Usar Cámara de mi Teléfono',
+                    : 'Usar cámara de este dispositivo',
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
@@ -376,6 +655,99 @@ class _DeviceCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 11),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RemoteTabletCard extends StatelessWidget {
+  final Map<String, dynamic> tablet;
+  final bool busy;
+  final ValueChanged<String> onCommand;
+
+  const _RemoteTabletCard({
+    required this.tablet,
+    required this.busy,
+    required this.onCommand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final active = tablet['estado'] == 'Transmitiendo';
+    final name = tablet['nombre'] as String? ?? 'Tablet Android';
+    final result = tablet['resultado'];
+    final resultMessage =
+        result is Map<String, dynamic> ? result['mensaje']?.toString() : null;
+    final resultIsWarning = result is Map<String, dynamic> &&
+        {'fuera_horario', 'desconocido'}.contains(result['tipo']);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.tablet_android,
+            color: AppColors.upecGreen,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  active ? 'Escaneando' : 'Conectada y lista',
+                  style: TextStyle(
+                    color:
+                        active ? AppColors.upecGreen : colors.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
+                ),
+                if (resultMessage != null && resultMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      resultMessage,
+                      style: TextStyle(
+                        color: resultIsWarning
+                            ? colors.error
+                            : AppColors.upecGreen,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed:
+                busy ? null : () => onCommand(active ? 'detener' : 'iniciar'),
+            style: FilledButton.styleFrom(
+              backgroundColor:
+                  active ? Colors.red.shade700 : AppColors.upecGreen,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            child: Text(active ? 'Detener' : 'Iniciar'),
           ),
         ],
       ),

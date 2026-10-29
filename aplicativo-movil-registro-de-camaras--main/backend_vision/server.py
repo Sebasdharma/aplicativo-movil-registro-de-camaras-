@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 import base64
 import binascii
@@ -18,6 +18,7 @@ from database import (
 from carchito_voice import CarchitoVoiceAssistant
 from face_engine import FaceEngine
 import threading
+import time
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -51,6 +52,9 @@ asistente = CarchitoVoiceAssistant()
 face_engine = FaceEngine()
 camera_thread = None
 camera_thread_lock = threading.Lock()
+tablet_cameras = {}
+tablet_cameras_lock = threading.Lock()
+TABLET_CAMERA_TIMEOUT_SECONDS = 12
 
 
 def verificar_token_microsoft(id_token):
@@ -475,6 +479,174 @@ def api_detener_camara():
         "mensaje": "Se solicitó terminar el escaneo OpenCV.",
     })
 
+
+@app.route("/api/camara/tablet/dispositivos", methods=["GET"])
+def api_tablet_cameras():
+    now = time.monotonic()
+    with tablet_cameras_lock:
+        connected = [
+            {
+                "tablet_id": tablet_id,
+                "nombre": camera["nombre"],
+                "estado": "Transmitiendo" if camera["activa"] else "Conectada",
+                "resultado": camera["resultado"],
+            }
+            for tablet_id, camera in tablet_cameras.items()
+            if now - camera["ultima_actividad"] <= TABLET_CAMERA_TIMEOUT_SECONDS
+        ]
+    return jsonify(connected)
+
+
+@app.route("/tablet-camera", methods=["GET"])
+def tablet_camera_page():
+    return render_template("tablet_camera.html")
+
+
+@app.route("/api/camara/tablet/heartbeat", methods=["POST"])
+def api_tablet_camera_heartbeat():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "mensaje": "Envía datos válidos."}), 400
+
+    tablet_id = data.get("tablet_id")
+    nombre = data.get("nombre", "Tablet Android")
+    activa = data.get("activa", False)
+    if not isinstance(tablet_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,64}", tablet_id
+    ):
+        return jsonify({
+            "status": "error",
+            "mensaje": "El identificador de la tablet no es válido.",
+        }), 400
+    if not isinstance(nombre, str) or not nombre.strip() or len(nombre) > 80:
+        return jsonify({"status": "error", "mensaje": "El nombre no es válido."}), 400
+    if not isinstance(activa, bool):
+        return jsonify({"status": "error", "mensaje": "El estado no es válido."}), 400
+
+    if data.get("habilitada") is False:
+        with tablet_cameras_lock:
+            tablet_cameras.pop(tablet_id, None)
+        return jsonify({"status": "ok", "command": None})
+
+    now = time.monotonic()
+    with tablet_cameras_lock:
+        camera = tablet_cameras.get(tablet_id)
+        if camera is None:
+            camera = {
+                "nombre": nombre.strip(),
+                "ultima_actividad": now,
+                "activa": activa,
+                "command": None,
+                "resultado": None,
+            }
+            tablet_cameras[tablet_id] = camera
+        camera["nombre"] = nombre.strip()
+        camera["ultima_actividad"] = now
+        camera["activa"] = activa
+        command = camera["command"]
+        camera["command"] = None
+
+    return jsonify({"status": "ok", "command": command})
+
+
+@app.route("/api/camara/tablet/resultado", methods=["POST"])
+def api_tablet_camera_result():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "mensaje": "Envía datos válidos."}), 400
+
+    tablet_id = data.get("tablet_id")
+    event_id = data.get("evento_id")
+    message = data.get("mensaje")
+    result_type = data.get("tipo")
+    if not isinstance(tablet_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,64}", tablet_id
+    ):
+        return jsonify({"status": "error", "mensaje": "La tablet no es válida."}), 400
+    if not isinstance(event_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,64}", event_id
+    ):
+        return jsonify({"status": "error", "mensaje": "El evento no es válido."}), 400
+    if not isinstance(message, str) or not message.strip() or len(message) > 500:
+        return jsonify({"status": "error", "mensaje": "El resultado no es válido."}), 400
+    if not isinstance(result_type, str) or result_type not in {
+        "reconocido",
+        "fuera_horario",
+        "desconocido",
+    }:
+        return jsonify({"status": "error", "mensaje": "El tipo de resultado no es válido."}), 400
+
+    now = time.monotonic()
+    with tablet_cameras_lock:
+        camera = tablet_cameras.get(tablet_id)
+        if (
+            camera is None
+            or now - camera["ultima_actividad"] > TABLET_CAMERA_TIMEOUT_SECONDS
+        ):
+            return jsonify({
+                "status": "error",
+                "mensaje": "La tablet no está conectada.",
+            }), 404
+        camera["resultado"] = {
+            "evento_id": event_id,
+            "mensaje": message.strip(),
+            "tipo": result_type,
+        }
+
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/camara/tablet/comando", methods=["POST"])
+def api_tablet_camera_command():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "mensaje": "Envía datos válidos."}), 400
+
+    tablet_id = data.get("tablet_id")
+    action = data.get("action")
+    materia_id = data.get("materia_id")
+    if not isinstance(tablet_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,64}", tablet_id
+    ):
+        return jsonify({"status": "error", "mensaje": "Selecciona una tablet válida."}), 400
+    if action not in ("iniciar", "detener"):
+        return jsonify({"status": "error", "mensaje": "La orden no es válida."}), 400
+    if action == "iniciar" and (
+        isinstance(materia_id, bool)
+        or not isinstance(materia_id, int)
+        or materia_id < 1
+    ):
+        return jsonify({"status": "error", "mensaje": "Selecciona una materia válida."}), 400
+
+    now = time.monotonic()
+    with tablet_cameras_lock:
+        camera = tablet_cameras.get(tablet_id)
+        if (
+            camera is None
+            or now - camera["ultima_actividad"] > TABLET_CAMERA_TIMEOUT_SECONDS
+        ):
+            return jsonify({
+                "status": "error",
+                "mensaje": (
+                    "La tablet no está conectada. Abre la página de cámara "
+                    "en Chrome y concede permiso para usar la cámara."
+                ),
+            }), 404
+        camera["command"] = {
+            "action": action,
+            "materia_id": materia_id,
+        }
+
+    return jsonify({
+        "status": "ok",
+        "mensaje": (
+            "Se envió la orden a la tablet."
+            if action == "iniciar"
+            else "Se solicitó detener la cámara de la tablet."
+        ),
+    })
+
+
 @app.route("/api/camara/telefono/escanear", methods=["POST"])
 def api_escanear_camara_telefono():
     data = request.json or {}
@@ -649,7 +821,15 @@ def api_enrolar():
         conn.close()
 
 if __name__ == "__main__":
-    print("Iniciando API AsisTech UPEC en http://localhost:5000 ...")
+    tls_cert = os.environ.get("ASISTECH_TLS_CERT")
+    tls_key = os.environ.get("ASISTECH_TLS_KEY")
+    if bool(tls_cert) != bool(tls_key):
+        raise RuntimeError(
+            "Configura ASISTECH_TLS_CERT y ASISTECH_TLS_KEY juntos para HTTPS."
+        )
+    ssl_context = (tls_cert, tls_key) if tls_cert and tls_key else None
+    protocol = "https" if ssl_context else "http"
+    print(f"Iniciando API AsisTech UPEC en {protocol}://0.0.0.0:5000 ...")
 
     def actualizar_ausencias_programadas():
         while True:
@@ -666,4 +846,9 @@ if __name__ == "__main__":
         name="actualizador-asistencias",
         daemon=True,
     ).start()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False,
+        ssl_context=ssl_context,
+    )
