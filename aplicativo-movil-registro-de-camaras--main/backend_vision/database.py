@@ -422,21 +422,30 @@ def init_db():
             )
 
     estudiantes_demostracion = [
-        ("UPEC-2026-001", "Reina Gordon Jhoel Sebastian"),
-        ("UPEC-2026-002", "Cadena Edelina"),
-        ("UPEC-2026-003", "Lema Jordy"),
-        ("UPEC-2026-004", "Ponce Melisa"),
-        ("UPEC-2026-005", "Carlosama Daniel"),
-        ("UPEC-2026-006", "Montenegro Valeria"),
+        ("UPEC-2026-001", "Reina Gordon Jhoel Sebastian", "Séptimo A - Mañana", "jhoel.reina@upec.edu.ec", "UPEC-2026-001-e4023eeb5a4341c28b2262f889ea08cd.jpg"),
+        ("UPEC-2026-002", "Cadena Edelina", "Séptimo A - Mañana", "edelina.cadena@upec.edu.ec", "UPEC-2026-002-9a386eaaf67449f28900fea2eacd0c9c.jpg"),
+        ("UPEC-2026-003", "Lema Jordy", "Séptimo A - Mañana", "jordy.lema@upec.edu.ec", "UPEC-2026-003-185bc90e89284403a712706986c9c24e.jpg"),
+        ("UPEC-2026-004", "Ponce Melisa", "Séptimo A - Mañana", "melisa.ponce@upec.edu.ec", "UPEC-2026-004-1dbc9cede9494fe0a189cf0f45e26e6f.jpg"),
+        ("UPEC-2026-005", "Carlosama Daniel", "Séptimo A - Mañana", "daniel.carlosama@upec.edu.ec", ""),
+        ("UPEC-2026-006", "Montenegro Valeria", "Séptimo A - Mañana", "valeria.montenegro@upec.edu.ec", ""),
+        ("UPEC-2026-007", "Chasi Joel", "Séptimo A - Mañana", "joel.chasi@upec.edu.ec", "UPEC-2026-007-4ee30b4ad4514153ab28674726d389d4.jpg"),
     ]
-    cursor.executemany(
-        """
-        UPDATE estudiantes SET activo = 0
-        WHERE codigo_estudiantil = ? AND nombre_completo = ?
-          AND (foto_path IS NULL OR foto_path = '')
-        """,
-        estudiantes_demostracion,
-    )
+    for cod, nom, niv, email, foto in estudiantes_demostracion:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO estudiantes (codigo_estudiantil, nombre_completo, nivel_paralelo, email, foto_path, activo)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (cod, nom, niv, email, foto),
+        )
+        cursor.execute("UPDATE estudiantes SET activo = 1 WHERE codigo_estudiantil = ?", (cod,))
+        est_row = cursor.execute("SELECT id FROM estudiantes WHERE codigo_estudiantil = ?", (cod,)).fetchone()
+        if est_row:
+            est_id = est_row["id"]
+            for m_row in cursor.execute("SELECT id FROM materias").fetchall():
+                cursor.execute("INSERT OR IGNORE INTO materia_estudiantes (materia_id, estudiante_id) VALUES (?, ?)", (m_row["id"], est_id))
+            if foto:
+                cursor.execute("INSERT OR IGNORE INTO fotos_faciales_estudiantes (estudiante_id, foto_path) VALUES (?, ?)", (est_id, foto))
     cursor.execute(
         """
         UPDATE dispositivos_iot

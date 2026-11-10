@@ -37,11 +37,45 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
   final Set<String> _identifiedStudents = {};
   late final Future<void> _voiceInitialization;
 
+  // Estado del HUD biométrico: 'idle', 'success', 'warning', 'danger'
+  String _biometricState = 'idle';
+  String _badgeText = 'Buscando Rostro';
+  String _studentName = 'Ubícate frente a la cámara';
+  String _statusSubtitle = 'Mirada al frente para verificar tu asistencia';
+  Timer? _resetTimer;
+
   @override
   void initState() {
     super.initState();
     _voiceInitialization = _initializeVoice();
     _startLiveScan();
+  }
+
+  void _setBiometricState(
+    String state,
+    String badge,
+    String name,
+    String subtitle,
+  ) {
+    if (!mounted) return;
+    setState(() {
+      _biometricState = state;
+      _badgeText = badge;
+      _studentName = name;
+      _statusSubtitle = subtitle;
+    });
+
+    _resetTimer?.cancel();
+    _resetTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _biometricState = 'idle';
+          _badgeText = 'Buscando Rostro';
+          _studentName = 'Ubícate frente a la cámara';
+          _statusSubtitle = 'Mirada al frente para verificar tu asistencia';
+        });
+      }
+    });
   }
 
   Future<void> _initializeVoice() async {
@@ -181,6 +215,40 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
         }
       }
 
+      if (fueraDeHorario != null) {
+        final nombreFuera = fueraDeHorario['nombre']?.toString() ?? 'Estudiante';
+        _setBiometricState(
+          'warning',
+          'Fuera de Horario',
+          nombreFuera,
+          '⚠ Fuera del horario de clases. Asistencia no registrada.',
+        );
+      } else if (hasIdentified) {
+        final identifiedNames = faces
+            .whereType<Map<String, dynamic>>()
+            .where((face) => face['estado'] == 'identificado')
+            .map((face) => face['nombre']?.toString() ?? 'Estudiante')
+            .toSet()
+            .join(', ');
+        final sub = attendanceChanged
+            ? '✓ Asistencia tomada con éxito'
+            : '✓ El estudiante ya consta presente';
+        _setBiometricState('success', 'Asistencia Confirmada', identifiedNames, sub);
+      } else if (confirmingIdentity) {
+        setState(() {
+          _badgeText = 'Verificando...';
+          _studentName = 'Mantén el rostro centrado';
+          _statusSubtitle = 'Confirmando identidad biométrica...';
+        });
+      } else if (detectedUnknown) {
+        _setBiometricState(
+          'danger',
+          'No Reconocido',
+          'Rostro no reconocido',
+          'Estudiante no enrolado en esta materia.',
+        );
+      }
+
       setState(() {
         _status = faces.isEmpty
             ? 'Buscando rostros...'
@@ -261,6 +329,7 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
 
   @override
   void dispose() {
+    _resetTimer?.cancel();
     final controller = _controller;
     if (controller != null) unawaited(controller.dispose());
     unawaited(_tts.stop());
@@ -271,6 +340,33 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
   Widget build(BuildContext context) {
     final controller = _controller;
     final colors = Theme.of(context).colorScheme;
+
+    Color reticleColor;
+    Color badgeBg;
+    Color badgeTextColor;
+
+    switch (_biometricState) {
+      case 'success':
+        reticleColor = const Color(0xFF00E676); // Verde Neón
+        badgeBg = const Color(0x3300E676);
+        badgeTextColor = const Color(0xFF00E676);
+        break;
+      case 'warning':
+        reticleColor = const Color(0xFFFF9100); // Ámbar / Naranja
+        badgeBg = const Color(0x33FF9100);
+        badgeTextColor = const Color(0xFFFF9100);
+        break;
+      case 'danger':
+        reticleColor = const Color(0xFFFF1744); // Rojo
+        badgeBg = const Color(0x33FF1744);
+        badgeTextColor = const Color(0xFFFF1744);
+        break;
+      default:
+        reticleColor = const Color(0xFF00D2FF); // Cian tecnológico
+        badgeBg = Colors.white.withOpacity(0.12);
+        badgeTextColor = Colors.white70;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Escaneo facial en vivo'),
@@ -286,24 +382,171 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
         child: Column(
           children: [
             Expanded(
-              child: Center(
-                child: ColoredBox(
-                  color: Colors.black,
-                  child: _error != null
-                      ? Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            'No se pudo iniciar la cámara.\n$_error',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: Colors.black,
+                    child: _error != null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'No se pudo iniciar la cámara.\n$_error',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          )
+                        : controller == null || !controller.value.isInitialized
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.upecGreen,
+                                ),
+                              )
+                            : FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  width:
+                                      controller.value.previewSize?.height ?? 1,
+                                  height:
+                                      controller.value.previewSize?.width ?? 1,
+                                  child: CameraPreview(controller),
+                                ),
+                              ),
+                  ),
+
+                  // MIRA BIOMÉTRICA CON LÁSER
+                  if (controller != null && controller.value.isInitialized)
+                    Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 260,
+                        height: 330,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all(
+                            color: reticleColor,
+                            width: _biometricState == 'idle' ? 2.5 : 4.0,
                           ),
-                        )
-                      : controller == null || !controller.value.isInitialized
-                          ? const CircularProgressIndicator(
-                              color: AppColors.upecGreen,
-                            )
-                          : CameraPreview(controller),
-                ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: reticleColor.withOpacity(
+                                _biometricState == 'idle' ? 0.25 : 0.6,
+                              ),
+                              blurRadius: _biometricState == 'idle' ? 18 : 36,
+                              spreadRadius: _biometricState == 'idle' ? 2 : 6,
+                            ),
+                          ],
+                        ),
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              top: 10,
+                              left: 10,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                        color: reticleColor, width: 3),
+                                    left: BorderSide(
+                                        color: reticleColor, width: 3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 10,
+                              right: 10,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                        color: reticleColor, width: 3),
+                                    right: BorderSide(
+                                        color: reticleColor, width: 3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  // TARJETA FLOTANTE CON INFORMACIÓN BIOMÉTRICA
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xE60F172A),
+                        borderRadius: BorderRadius.circular(20),
+                        border:
+                            Border.all(color: Colors.white.withOpacity(0.12)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x66000000),
+                            blurRadius: 24,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: badgeBg,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _badgeText,
+                              style: TextStyle(
+                                color: badgeTextColor,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _studentName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _statusSubtitle,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.75),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Container(

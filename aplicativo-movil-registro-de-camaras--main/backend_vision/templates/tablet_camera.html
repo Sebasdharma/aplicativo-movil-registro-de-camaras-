@@ -2,185 +2,566 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#006b3c">
-  <title>AsisTech | Cámara para OpenCV</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#070f26">
+  <title>AsisTech | Terminal Biométrico de Acceso</title>
   <style>
     :root {
-      color-scheme: light;
-      font-family: system-ui, sans-serif;
-      background: #f3f5f7;
-      color: #161a18;
+      --bg-dark: #070f26;
+      --card-bg: rgba(15, 23, 42, 0.85);
+      --upec-green: #00a859;
+      --upec-yellow: #f4b400;
+      --state-green: #00e676;
+      --state-orange: #ff9100;
+      --state-red: #ff1744;
+      --state-blue: #00d2ff;
+      --text-white: #ffffff;
+      --text-muted: #94a3b8;
     }
-    body { margin: 0; padding: 24px; }
-    main {
-      box-sizing: border-box;
-      max-width: 720px;
-      margin: 24px auto;
-      padding: 24px;
-      border: 1px solid #d5dad7;
-      border-radius: 18px;
-      background: white;
-      box-shadow: 0 8px 28px #17251d14;
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-dark);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-white);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
     }
-    h1 { margin-top: 0; color: #006b3c; font-size: 1.5rem; }
-    p { line-height: 1.5; }
-    video { display: block; width: 100%; max-height: 55vh; background: #171a18; border-radius: 12px; }
-    button {
+
+    /* BARRA SUPERIOR */
+    header {
+      background: rgba(11, 19, 43, 0.95);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--upec-green), #004d28);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(0, 168, 89, 0.4);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--upec-yellow);
+      display: block;
+      font-weight: 600;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .clock-badge {
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .status-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-pill::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 6px currentColor;
+    }
+
+    .status-standby {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+    }
+
+    .status-active {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--state-green);
+    }
+
+    /* CONTENEDOR PRINCIPAL DE CÁMARA */
+    .kiosk-viewport {
+      flex: 1;
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    video {
       width: 100%;
-      min-height: 52px;
-      margin-top: 16px;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Modo espejo frontal */
+    }
+
+    /* OVERLAY / MIRA BIOMÉTRICA */
+    .biometric-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .face-reticle {
+      width: 260px;
+      height: 330px;
+      position: relative;
+      border-radius: 32px;
+      border: 2px dashed rgba(0, 210, 255, 0.4);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 20px rgba(0, 210, 255, 0.1);
+    }
+
+    /* Esquinas estilo visor tecnológico */
+    .face-reticle::before,
+    .face-reticle::after {
+      content: '';
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-color: var(--state-blue);
+      border-style: solid;
+      pointer-events: none;
+      transition: border-color 0.3s ease;
+    }
+
+    .face-reticle::before {
+      top: -3px;
+      left: -3px;
+      border-width: 4px 0 0 4px;
+      border-top-left-radius: 28px;
+    }
+
+    .face-reticle::after {
+      bottom: -3px;
+      right: -3px;
+      border-width: 0 4px 4px 0;
+      border-bottom-right-radius: 28px;
+    }
+
+    /* Animación de escaneo láser */
+    .scan-laser {
+      position: absolute;
+      top: 0;
+      left: 5%;
+      right: 5%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--state-blue), transparent);
+      box-shadow: 0 0 12px var(--state-blue);
+      animation: scanMovement 2.2s infinite ease-in-out;
+      opacity: 0.8;
+    }
+
+    @keyframes scanMovement {
+      0% { top: 4%; opacity: 0.2; }
+      50% { top: 94%; opacity: 0.9; }
+      100% { top: 4%; opacity: 0.2; }
+    }
+
+    /* ESTADOS DINÁMICOS DEL MARCO FACIAL */
+    /* 1. RECONOCIDO Y DENTRO DE HORARIO (VERDE) */
+    .face-reticle.state-success {
+      border: 3px solid var(--state-green) !important;
+      box-shadow: 0 0 35px rgba(0, 230, 118, 0.6), inset 0 0 25px rgba(0, 230, 118, 0.2) !important;
+    }
+    .face-reticle.state-success::before,
+    .face-reticle.state-success::after {
+      border-color: var(--state-green) !important;
+    }
+    .face-reticle.state-success .scan-laser {
+      background: linear-gradient(90deg, transparent, var(--state-green), transparent);
+      box-shadow: 0 0 16px var(--state-green);
+    }
+
+    /* 2. FUERA DE HORARIO (ÁMBAR / NARANJA) */
+    .face-reticle.state-warning {
+      border: 3px solid var(--state-orange) !important;
+      box-shadow: 0 0 35px rgba(255, 145, 0, 0.6), inset 0 0 25px rgba(255, 145, 0, 0.2) !important;
+    }
+    .face-reticle.state-warning::before,
+    .face-reticle.state-warning::after {
+      border-color: var(--state-orange) !important;
+    }
+    .face-reticle.state-warning .scan-laser {
+      background: linear-gradient(90deg, transparent, var(--state-orange), transparent);
+      box-shadow: 0 0 16px var(--state-orange);
+    }
+
+    /* 3. DESCONOCIDO / ERROR (ROJO) */
+    .face-reticle.state-danger {
+      border: 3px solid var(--state-red) !important;
+      box-shadow: 0 0 35px rgba(255, 23, 68, 0.6), inset 0 0 25px rgba(255, 23, 68, 0.2) !important;
+    }
+    .face-reticle.state-danger::before,
+    .face-reticle.state-danger::after {
+      border-color: var(--state-red) !important;
+    }
+
+    /* TARJETA INFERIOR DE RESULTADO */
+    .feedback-banner {
+      position: absolute;
+      bottom: 24px;
+      left: 18px;
+      right: 18px;
+      background: var(--card-bg);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 16px 20px;
+      text-align: center;
+      z-index: 20;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .feedback-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 4px 12px;
+      border-radius: 12px;
+      margin-bottom: 6px;
+    }
+
+    .badge-idle { background: rgba(255, 255, 255, 0.1); color: var(--text-muted); }
+    .badge-success { background: rgba(0, 230, 118, 0.2); color: var(--state-green); }
+    .badge-warning { background: rgba(255, 145, 0, 0.2); color: var(--state-orange); }
+    .badge-danger { background: rgba(255, 23, 68, 0.2); color: var(--state-red); }
+
+    .student-name {
+      font-size: 19px;
+      font-weight: 800;
+      margin: 2px 0 4px 0;
+      letter-spacing: -0.3px;
+    }
+
+    .attendance-status {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* BOTÓN DE CONEXIÓN INICIAL */
+    #start-screen {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(7, 15, 38, 0.94);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .start-btn {
+      width: 100%;
+      max-width: 320px;
+      height: 56px;
+      background: linear-gradient(135deg, var(--upec-green), #007a40);
+      color: white;
       border: 0;
       border-radius: 28px;
-      background: #006b3c;
-      color: white;
-      font: inherit;
+      font-size: 16px;
       font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 168, 89, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    #status { min-height: 1.5em; font-weight: 600; }
-    #result { color: #006b3c; }
-    #result.warning { color: #a34a00; }
-    @media (max-width: 480px) {
-      body { padding: 12px; }
-      main { margin: 12px auto; padding: 18px; }
+
+    .start-btn:active {
+      transform: scale(0.97);
+    }
+
+    .materia-select {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 14px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      max-width: 320px;
+      width: 100%;
+      outline: none;
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Cámara OpenCV</h1>
-    <p>Usa la cámara frontal. Permite el acceso una vez y mantén esta página abierta para iniciar o detener el escaneo desde el teléfono.</p>
+
+  <!-- PANTALLA INICIAL DE CONEXIÓN -->
+  <div id="start-screen">
+    <div class="brand-logo" style="width: 54px; height: 54px; font-size: 24px; margin-bottom: 16px;">U</div>
+    <h2 style="margin: 0 0 8px 0; font-size: 20px;">Terminal Biométrico de Acceso</h2>
+    <p style="color: var(--text-muted); font-size: 13px; max-width: 300px; margin: 0 0 20px 0; line-height: 1.4;">
+      Coloca este dispositivo en la entrada del aula. Concede permiso de cámara para iniciar el escaneo facial automático.
+    </p>
+
+    <label style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block;">Materia activa en aula:</label>
+    <select id="materia-selector" class="materia-select">
+      <option value="1">COMP-701 | Aplicaciones Móviles</option>
+      <option value="2">COMP-702 | Visión por Computador</option>
+      <option value="3">COMP-703 | Inteligencia Artificial</option>
+      <option value="4">COMP-704 | Redes y Comunicaciones</option>
+      <option value="5">COMP-705 | Seguridad de la Información</option>
+    </select>
+
+    <button id="connect" class="start-btn" type="button">
+      <span>Activar Cámara de Puerta</span>
+    </button>
+  </div>
+
+  <!-- BARRA SUPERIOR INSTITUCIONAL -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">U</div>
+      <div>
+        <div class="brand-title">AsisTech UPEC</div>
+        <span class="brand-sub" id="label-materia">Sensor Facial Puerta</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="clock-badge" id="live-clock">10:00:00</div>
+      <div class="status-pill status-standby" id="status-pill">Standby</div>
+    </div>
+  </header>
+
+  <!-- ÁREA DE VIDEO Y RETÍCULA BIOMÉTRICA -->
+  <div class="kiosk-viewport">
     <video id="camera" autoplay muted playsinline></video>
-    <button id="connect" type="button">Permitir cámara y conectar</button>
-    <p id="status" role="status">La cámara todavía no está conectada.</p>
-    <p id="result" aria-live="polite"></p>
-  </main>
+    
+    <div class="biometric-overlay">
+      <div class="face-reticle" id="reticle">
+        <div class="scan-laser"></div>
+      </div>
+    </div>
+
+    <!-- TARJETA FLOTANTE DE RESULTADOS Y ASISTENCIA -->
+    <div class="feedback-banner" id="feedback-card">
+      <div class="feedback-badge badge-idle" id="result-badge">Esperando Rostro</div>
+      <div class="student-name" id="student-name">Ubícate frente al sensor</div>
+      <p class="attendance-status" id="attendance-status">Mirada al frente para verificar tu asistencia</p>
+    </div>
+  </div>
+
   <script>
     const api = window.location.origin;
     const cameraIdKey = 'asistech_web_tablet_camera_id';
-    const cameraId = localStorage.getItem(cameraIdKey) || crypto.randomUUID();
+    const cameraId = localStorage.getItem(cameraIdKey) || (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'kiosk_' + Date.now());
     localStorage.setItem(cameraIdKey, cameraId);
+
     const video = document.getElementById('camera');
     const connectButton = document.getElementById('connect');
-    const status = document.getElementById('status');
-    const result = document.getElementById('result');
+    const startScreen = document.getElementById('start-screen');
+    const statusPill = document.getElementById('status-pill');
+    const reticle = document.getElementById('reticle');
+    const resultBadge = document.getElementById('result-badge');
+    const studentName = document.getElementById('student-name');
+    const attendanceStatus = document.getElementById('attendance-status');
+    const liveClock = document.getElementById('live-clock');
+    const materiaSelector = document.getElementById('materia-selector');
+    const labelMateria = document.getElementById('label-materia');
+
     const canvas = document.createElement('canvas');
     let stream;
     let connected = false;
     let scanning = false;
     let polling = false;
-    let lastReportedResult = '';
-    let lastAnnouncedResult = '';
+    let currentMateriaId = 1;
+    let resetTimer = null;
+    let lastAnnouncedKey = '';
 
-    function showStatus(message) {
-      status.textContent = message;
+    // Reloj digital continuo
+    function updateClock() {
+      const now = new Date();
+      liveClock.textContent = now.toLocaleTimeString('es-EC', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    function setKioskVisualState(state, title, subtitle, badgeText) {
+      reticle.classList.remove('state-success', 'state-warning', 'state-danger');
+      resultBadge.classList.remove('badge-idle', 'badge-success', 'badge-warning', 'badge-danger');
+
+      if (state === 'success') {
+        reticle.classList.add('state-success');
+        resultBadge.classList.add('badge-success');
+      } else if (state === 'warning') {
+        reticle.classList.add('state-warning');
+        resultBadge.classList.add('badge-warning');
+      } else if (state === 'danger') {
+        reticle.classList.add('state-danger');
+        resultBadge.classList.add('badge-danger');
+      } else {
+        resultBadge.classList.add('badge-idle');
+      }
+
+      resultBadge.textContent = badgeText;
+      studentName.textContent = title;
+      attendanceStatus.textContent = subtitle;
+
+      // Volver a estado neutral después de 4 segundos
+      if (state !== 'idle') {
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+          setKioskVisualState('idle', 'Ubícate frente al sensor', 'Mirada al frente para verificar tu asistencia', 'Listo para escanear');
+        }, 4000);
+      }
     }
 
     function announce(message) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(message);
-      utterance.lang = 'es-ES';
-      utterance.rate = 0.9;
+      utterance.lang = 'es-EC';
+      utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
-    }
-
-    async function reportResult(type, message, key) {
-      if (key === lastReportedResult) return;
-      const response = await fetch(`${api}/api/camara/tablet/resultado`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tablet_id: cameraId,
-          evento_id: crypto.randomUUID(),
-          tipo: type,
-          mensaje: message,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.mensaje || 'No se pudo enviar el resultado al teléfono.');
-      lastReportedResult = key;
     }
 
     async function sendFrame(materiaId) {
       if (!stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = 480;
+      canvas.height = Math.round(480 * (video.videoHeight / video.videoWidth));
       const context = canvas.getContext('2d');
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       const foto = canvas.toDataURL('image/jpeg', 0.65).split(',', 2)[1];
+
       const response = await fetch(`${api}/api/camara/telefono/escanear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ materia_id: materiaId, foto, rotacion: 0 }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.mensaje || 'No se pudo analizar el fotograma.');
+      if (!response.ok) return;
+
       const faces = data.rostros || [];
       const outsideSchedule = faces.find((face) => face.estado === 'fuera_horario');
       const identified = faces.filter((face) => face.estado === 'identificado');
       const verifying = faces.some((face) => face.estado === 'verificando');
-      let type = '';
-      let message = '';
-      let eventKey = '';
 
       if (outsideSchedule) {
-        type = 'fuera_horario';
-        eventKey = `${type}:${outsideSchedule.codigo || outsideSchedule.nombre}`;
-        message = `Estudiante reconocido: ${outsideSchedule.nombre || 'Estudiante'}. `
-          + `Está fuera del horario de clases y no se registró la asistencia. `
-          + (outsideSchedule.mensaje || 'Verifica el horario de clase.');
-      } else if (identified.length) {
-        type = 'reconocido';
-        eventKey = `${type}:${identified.map((face) => face.codigo || face.nombre).join(',')}`;
-        const names = [...new Set(identified.map((face) => face.nombre || 'Estudiante'))];
-        const newAttendance = identified.some((face) => face.registro_nuevo);
-        const alreadyPresent = identified.every((face) => face.asistencia_registrada);
-        message = newAttendance
-          ? `Se reconoció a ${names.join(', ')}. Asistencia tomada exitosamente.`
-          : alreadyPresent
-            ? `Se reconoció a ${names.join(', ')}. El estudiante ya consta presente.`
-            : `Se reconoció a ${names.join(', ')}.`;
-      } else if (verifying) {
-        result.classList.remove('warning');
-        result.textContent = 'Confirmando la identidad; mantén el rostro centrado...';
-        return;
-      } else if (faces.length) {
-        type = 'desconocido';
-        eventKey = type;
-        message = 'Rostro detectado, pero no se reconoce al estudiante.';
-      } else {
-        result.textContent = '';
-        result.classList.remove('warning');
-        lastReportedResult = '';
-        lastAnnouncedResult = '';
-        return;
-      }
-
-      result.textContent = message;
-      result.classList.toggle('warning', type === 'fuera_horario' || type === 'desconocido');
-      if (eventKey !== lastAnnouncedResult) {
-        lastAnnouncedResult = eventKey;
-        announce(message);
-      }
-      try {
-        const previousResultKey = lastReportedResult;
-        if (eventKey !== previousResultKey) {
-          await reportResult(type, message, eventKey);
+        const name = outsideSchedule.nombre || 'Estudiante';
+        const key = `outside:${name}`;
+        setKioskVisualState(
+          'warning',
+          name,
+          '⚠ Fuera del horario de clases. No se registró asistencia.',
+          'Fuera de Horario'
+        );
+        if (key !== lastAnnouncedKey) {
+          lastAnnouncedKey = key;
+          announce(`${name}, te encuentras fuera del horario de clases.`);
         }
-      } catch (error) {
-        showStatus(`Escaneo activo; no se pudo enviar el resultado al teléfono: ${error.message}`);
+      } else if (identified.length) {
+        const names = [...new Set(identified.map((face) => face.nombre || 'Estudiante'))].join(', ');
+        const isNew = identified.some((face) => face.registro_nuevo);
+        const subMsg = isNew ? '✓ Asistencia tomada con éxito' : '✓ El estudiante ya consta presente';
+        const key = `ident:${names}:${isNew}`;
+        
+        // MARCO VERDE + INFORMACIÓN DEL ESTUDIANTE
+        setKioskVisualState(
+          'success',
+          names,
+          subMsg,
+          'Asistencia Confirmada'
+        );
+
+        if (key !== lastAnnouncedKey) {
+          lastAnnouncedKey = key;
+          announce(isNew ? `${names}, asistencia registrada exitosamente.` : `${names}, ya estás registrado.`);
+        }
+      } else if (verifying) {
+        resultBadge.textContent = 'Verificando...';
+        studentName.textContent = 'Mantén tu rostro en el centro';
+        attendanceStatus.textContent = 'Confirmando identidad biométrica...';
+      } else if (faces.length) {
+        setKioskVisualState(
+          'danger',
+          'Rostro no reconocido',
+          'El estudiante no se encuentra enrolado en esta materia.',
+          'No Reconocido'
+        );
       }
     }
 
-    async function scanLoop(materiaId) {
+    async function scanLoop() {
       while (scanning) {
         try {
-          await sendFrame(materiaId);
-        } catch (error) {
-          showStatus(`Error de escaneo: ${error.message}`);
+          await sendFrame(currentMateriaId);
+        } catch (e) {
+          console.error(e);
         }
-        await new Promise((resolve) => setTimeout(resolve, 900));
+        await new Promise((resolve) => setTimeout(resolve, 850));
       }
     }
 
@@ -194,53 +575,73 @@
           cache: 'no-store',
           body: JSON.stringify({
             tablet_id: cameraId,
-            nombre: 'Tablet Chrome',
+            nombre: 'Samsung Galaxy J2',
             activa: scanning,
           }),
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.mensaje || 'No se pudo conectar al servidor.');
-        const command = data.command;
-        if (command?.action === 'iniciar' && Number.isInteger(command.materia_id) && !scanning) {
-          scanning = true;
-          showStatus('Escaneo OpenCV activo. Puedes detenerlo desde el teléfono.');
-          void scanLoop(command.materia_id);
-        } else if (command?.action === 'detener' && scanning) {
-          scanning = false;
-          result.textContent = '';
-          showStatus('Escaneo detenido. La tablet sigue conectada.');
-        } else if (!scanning) {
-          showStatus('Tablet conectada. Esperando la orden del teléfono.');
+        if (response.ok && data.command) {
+          const cmd = data.command;
+          if (cmd.action === 'iniciar' && Number.isInteger(cmd.materia_id)) {
+            currentMateriaId = cmd.materia_id;
+            materiaSelector.value = currentMateriaId;
+            labelMateria.textContent = materiaSelector.options[materiaSelector.selectedIndex]?.text || 'Materia Activa';
+            if (!scanning) {
+              scanning = true;
+              statusPill.className = 'status-pill status-active';
+              statusPill.textContent = 'Escaneando';
+              void scanLoop();
+            }
+          } else if (cmd.action === 'detener' && scanning) {
+            scanning = false;
+            statusPill.className = 'status-pill status-standby';
+            statusPill.textContent = 'Standby';
+          }
         }
-      } catch (error) {
-        showStatus(`Sin conexión con el servidor: ${error.message}`);
+      } catch (err) {
+        console.warn('Heartbeat offline:', err);
       } finally {
         polling = false;
       }
     }
 
+    materiaSelector.addEventListener('change', () => {
+      currentMateriaId = parseInt(materiaSelector.value, 10);
+      labelMateria.textContent = materiaSelector.options[materiaSelector.selectedIndex]?.text || 'Materia Activa';
+    });
+
     connectButton.addEventListener('click', async () => {
       connectButton.disabled = true;
+      connectButton.innerHTML = '<span>Iniciando sensor...</span>';
       try {
+        currentMateriaId = parseInt(materiaSelector.value, 10);
+        labelMateria.textContent = materiaSelector.options[materiaSelector.selectedIndex]?.text || 'Materia Activa';
+
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: { facingMode: { ideal: 'user' }, width: { ideal: 640 } },
         });
         video.srcObject = stream;
         connected = true;
-        connectButton.textContent = 'Cámara conectada';
-        showStatus('Conectando con el servidor…');
-        await pollCommand();
-      } catch (error) {
+        scanning = true;
+
+        startScreen.style.display = 'none';
+        statusPill.className = 'status-pill status-active';
+        statusPill.textContent = 'Escaneando';
+        setKioskVisualState('idle', 'Ubícate frente al sensor', 'Mirada al frente para verificar tu asistencia', 'Sensor Listo');
+
+        void scanLoop();
+        window.setInterval(pollCommand, 2500);
+      } catch (err) {
         connectButton.disabled = false;
-        showStatus(`No se pudo abrir la cámara: ${error.message}`);
+        connectButton.innerHTML = '<span>Error al abrir cámara</span>';
+        alert('No se pudo acceder a la cámara frontal: ' + err.message);
       }
     });
 
-    window.setInterval(pollCommand, 2000);
     window.addEventListener('pagehide', () => {
       scanning = false;
-      stream?.getTracks().forEach((track) => track.stop());
+      stream?.getTracks().forEach((t) => t.stop());
     });
   </script>
 </body>

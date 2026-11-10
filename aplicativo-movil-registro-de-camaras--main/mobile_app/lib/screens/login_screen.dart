@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/app_colors.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'institutional_dashboard_screen.dart';
+import 'kiosk_terminal_screen.dart';
 
 const _microsoftClientId = '6a39d754-3c15-4599-b074-3925b7c7e77e';
 const _microsoftTenantId = '0a42bec9-732b-45d1-977d-3b8d3ac98c2b';
@@ -30,6 +32,93 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
   String? _estadoInicioMicrosoft;
   String? _errorInicioMicrosoft;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarServidorGuardado();
+  }
+
+  Future<void> _cargarServidorGuardado() async {
+    final prefs = await SharedPreferences.getInstance();
+    final guardado = prefs.getString('asistech_custom_server_url');
+    if (guardado != null && guardado.isNotEmpty) {
+      ApiService.setBaseUrl(guardado);
+    }
+  }
+
+  Future<void> _configurarServidor() async {
+    final controller = TextEditingController(text: ApiService.baseUrl);
+    final nuevoUrl = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.dns, color: AppColors.upecGreen),
+            SizedBox(width: 8),
+            Text('Servidor Backend', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Ingresa la IP de la computadora que ejecuta el backend:',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'URL del Servidor',
+                hintText: 'http://172.20.227.252:5000',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              children: [
+                ActionChip(
+                  label: const Text('Wi-Fi UPEC', style: TextStyle(fontSize: 10)),
+                  onPressed: () => controller.text = 'http://172.20.227.252:5000',
+                ),
+                ActionChip(
+                  label: const Text('Emulador', style: TextStyle(fontSize: 10)),
+                  onPressed: () => controller.text = 'http://10.0.2.2:5000',
+                ),
+                ActionChip(
+                  label: const Text('Localhost', style: TextStyle(fontSize: 10)),
+                  onPressed: () => controller.text = 'http://127.0.0.1:5000',
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (nuevoUrl != null && nuevoUrl.trim().isNotEmpty) {
+      ApiService.setBaseUrl(nuevoUrl);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('asistech_custom_server_url', nuevoUrl.trim());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Servidor configurado: ${ApiService.baseUrl}')),
+        );
+      }
+    }
+  }
 
   Future<void> _iniciarSesionMicrosoft() async {
     var etapa = 'abriendo el inicio de sesión de Microsoft';
@@ -242,6 +331,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Configurar Servidor IP',
+                        icon: const Icon(Icons.settings_ethernet, color: AppColors.upecGreen),
+                        onPressed: _configurarServidor,
+                      ),
                     ],
                   ),
                 ),
@@ -347,6 +441,38 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ],
                               ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _cargando
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const KioskTerminalScreen(),
+                                  ),
+                                );
+                              },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.upecGreen,
+                          side: const BorderSide(
+                            color: AppColors.upecGreen,
+                            width: 1.5,
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        icon: const Icon(Icons.sensor_occupied, size: 20),
+                        label: const Text(
+                          'Terminal Biométrico de Puerta (Kiosco)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                       if (_cargando && _estadoInicioMicrosoft != null) ...[
                         const SizedBox(height: 12),

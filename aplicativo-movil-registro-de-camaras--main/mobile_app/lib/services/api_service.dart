@@ -5,11 +5,23 @@ import '../models/models.dart';
 
 class ApiService {
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
-  static final String baseUrl = _configuredBaseUrl.isNotEmpty
-      ? _configuredBaseUrl
-      : defaultTargetPlatform == TargetPlatform.android
-          ? 'http://10.0.2.2:5000'
-          : 'http://127.0.0.1:5000';
+  static String? _overrideBaseUrl;
+
+  static String get baseUrl {
+    if (_overrideBaseUrl != null && _overrideBaseUrl!.trim().isNotEmpty) {
+      return _overrideBaseUrl!.trim();
+    }
+    if (_configuredBaseUrl.isNotEmpty) {
+      return _configuredBaseUrl;
+    }
+    return defaultTargetPlatform == TargetPlatform.android
+        ? 'http://172.20.245.197:5000'
+        : 'http://127.0.0.1:5000';
+  }
+
+  static void setBaseUrl(String url) {
+    _overrideBaseUrl = url.trim();
+  }
 
   static Future<Docente> loginMicrosoft(String idToken) async {
     final http.Response response;

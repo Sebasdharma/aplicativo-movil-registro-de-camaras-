@@ -152,14 +152,36 @@ def api_auth_microsoft():
         conn.close()
 
     if docente is None:
-        return jsonify({
-            "status": "error",
-            "mensaje": (
-                "Tu cuenta Microsoft se autenticó, pero aún no está registrada "
-                "como docente de AsisTech. Para las pruebas actuales, ingresa "
-                "con el acceso temporal de Administrador."
-            ),
-        }), 403
+        if email.lower().endswith("@upec.edu.ec"):
+            nombre = claims.get("name") or email.split("@")[0].replace(".", " ").title()
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO docentes (email_institucional, nombre_completo, facultad, carrera, auth_provider)
+                VALUES (?, ?, ?, ?, 'microsoft')
+                """,
+                (
+                    email,
+                    nombre,
+                    "Facultad de Industrias Agropecuarias y Ciencias Ambientales (FIACA)",
+                    "Carrera de Computación",
+                ),
+            )
+            nuevo_id = cursor.lastrowid
+            cursor.execute("UPDATE materias SET docente_id = ? WHERE docente_id IS NULL OR docente_id = 1", (nuevo_id,))
+            conn.commit()
+            docente = cursor.execute("SELECT * FROM docentes WHERE id = ?", (nuevo_id,)).fetchone()
+            conn.close()
+        else:
+            return jsonify({
+                "status": "error",
+                "mensaje": (
+                    "Tu cuenta Microsoft se autenticó, pero aún no está registrada "
+                    "como docente de AsisTech. Para las pruebas actuales, ingresa "
+                    "con el acceso temporal de Administrador."
+                ),
+            }), 403
 
     return jsonify({
         "status": "ok",
