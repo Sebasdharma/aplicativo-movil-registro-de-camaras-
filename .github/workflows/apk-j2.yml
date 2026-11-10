@@ -14,7 +14,7 @@ on:
       servidor:
         description: "Dirección del backend (ej. http://192.168.1.25:5000)"
         required: true
-        default: "http://172.20.245.88:5000"
+        default: "http://172.20.245.197:5000"
 
 permissions:
   contents: write
@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: aplicativo-movil-registro-de-camaras--main/j2_camera_app
     env:
-      SERVIDOR: ${{ github.event.inputs.servidor || 'http://172.20.245.88:5000' }}
+      SERVIDOR: ${{ github.event.inputs.servidor || 'http://172.20.245.197:5000' }}
     steps:
       - uses: actions/checkout@v4
 
