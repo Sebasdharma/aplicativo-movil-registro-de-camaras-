@@ -732,6 +732,14 @@ def init_db():
         UPDATE estudiantes SET activo = 0
         WHERE codigo_estudiantil = ? AND nombre_completo = ?
           AND (foto_path IS NULL OR foto_path = '')
+          AND NOT EXISTS (
+              SELECT 1 FROM materia_estudiantes
+              WHERE materia_estudiantes.estudiante_id = estudiantes.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM asistencias
+              WHERE asistencias.estudiante_id = estudiantes.id
+          )
         """,
         estudiantes_demostracion,
     )
@@ -1366,6 +1374,7 @@ def obtener_resumen_asistencia(materia_id=1, fecha=None):
 def obtener_materias_docente(docente_id=1):
     conn = get_db()
     cursor = conn.cursor()
+    ahora = datetime.now()
     administrador = cursor.execute(
         """
         SELECT id FROM docentes
@@ -1389,6 +1398,11 @@ def obtener_materias_docente(docente_id=1):
         ORDER BY id
         """, (docente_id,))
     materias = [dict(r) for r in cursor.fetchall()]
+    for materia in materias:
+        periodos = obtener_periodos_lectivos(
+            materia["horario"], ahora.strftime("%Y-%m-%d")
+        )
+        materia["horario_activo"] = _periodo_actual(periodos, ahora) is not None
     conn.close()
     return materias
 

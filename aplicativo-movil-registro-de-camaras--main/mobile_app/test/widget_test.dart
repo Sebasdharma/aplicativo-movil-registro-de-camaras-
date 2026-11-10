@@ -205,6 +205,7 @@ void main() {
       aula: '',
       periodo: '',
       nivelParalelo: '',
+      horarioActivo: true,
     );
 
     await tester.pumpWidget(

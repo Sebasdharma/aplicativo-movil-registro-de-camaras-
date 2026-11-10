@@ -127,20 +127,11 @@
       if (outsideSchedule) {
         type = 'fuera_horario';
         eventKey = `${type}:${outsideSchedule.codigo || outsideSchedule.nombre}`;
-        message = `Estudiante reconocido: ${outsideSchedule.nombre || 'Estudiante'}. `
-          + `Está fuera del horario de clases y no se registró la asistencia. `
-          + (outsideSchedule.mensaje || 'Verifica el horario de clase.');
+        message = 'Fuera de horario';
       } else if (identified.length) {
         type = 'reconocido';
         eventKey = `${type}:${identified.map((face) => face.codigo || face.nombre).join(',')}`;
-        const names = [...new Set(identified.map((face) => face.nombre || 'Estudiante'))];
-        const newAttendance = identified.some((face) => face.registro_nuevo);
-        const alreadyPresent = identified.every((face) => face.asistencia_registrada);
-        message = newAttendance
-          ? `Se reconoció a ${names.join(', ')}. Asistencia tomada exitosamente.`
-          : alreadyPresent
-            ? `Se reconoció a ${names.join(', ')}. El estudiante ya consta presente.`
-            : `Se reconoció a ${names.join(', ')}.`;
+        message = 'Asistencia correcta';
       } else if (verifying) {
         result.classList.remove('warning');
         result.textContent = 'Confirmando la identidad; mantén el rostro centrado...';
@@ -148,7 +139,7 @@
       } else if (faces.length) {
         type = 'desconocido';
         eventKey = type;
-        message = 'Rostro detectado, pero no se reconoce al estudiante.';
+        message = 'Desconocido';
       } else {
         result.textContent = '';
         result.classList.remove('warning');

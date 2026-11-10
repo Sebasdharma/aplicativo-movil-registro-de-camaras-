@@ -49,6 +49,7 @@ class _InstitutionalDashboardScreenState
     _actualizador = Timer.periodic(
       const Duration(seconds: 4),
       (_) {
+        _actualizarHorarios();
         if (_materiaSeleccionada != null) {
           _cargarAsistencias(silencioso: true);
         }
@@ -85,6 +86,32 @@ class _InstitutionalDashboardScreenState
         _cargando = false;
         _errorCarga = true;
       });
+    }
+  }
+
+  Future<void> _actualizarHorarios() async {
+    try {
+      final materias = await ApiService.getMaterias(
+        docenteId: widget.docente.id,
+      );
+      if (!mounted) return;
+      final selectedId = _materiaSeleccionada?.id;
+      Materia? seleccionadaActualizada;
+      for (final materia in materias) {
+        if (materia.id == selectedId) {
+          seleccionadaActualizada = materia;
+          break;
+        }
+      }
+      setState(() {
+        _materias = materias;
+        _materiaSeleccionada = seleccionadaActualizada?.horarioActivo == true
+            ? seleccionadaActualizada
+            : null;
+        if (_materiaSeleccionada == null) _estudiantes = [];
+      });
+    } catch (error) {
+      debugPrint('No se pudieron actualizar los horarios de materias: $error');
     }
   }
 
@@ -420,8 +447,12 @@ class _InstitutionalDashboardScreenState
         actions: [
           if (_selectedTab != 2)
             IconButton(
-              tooltip: 'Actualizar asistencia',
-              onPressed: _cargarAsistencias,
+              tooltip: _materiaSeleccionada == null
+                  ? 'Actualizar materias'
+                  : 'Actualizar asistencia',
+              onPressed: _materiaSeleccionada == null
+                  ? _cargarDatos
+                  : _cargarAsistencias,
               icon: const Icon(Icons.refresh),
             ),
           PopupMenuButton<String>(
@@ -470,14 +501,17 @@ class _InstitutionalDashboardScreenState
       ),
       body: Column(
         children: [
-          if (_selectedTab != 2) _buildMateriaStrip(),
+          if (_selectedTab != 2 && _materiaSeleccionada != null)
+            _buildSelectedMateriaHeader(),
           Expanded(
-            child: _buildSelectedTab(
-              total,
-              presentes,
-              ausentes,
-              periodosActivos,
-            ),
+            child: _selectedTab != 2 && _materiaSeleccionada == null
+                ? _buildMateriaSelection()
+                : _buildSelectedTab(
+                    total,
+                    presentes,
+                    ausentes,
+                    periodosActivos,
+                  ),
           ),
         ],
       ),
@@ -485,111 +519,219 @@ class _InstitutionalDashboardScreenState
     );
   }
 
-  Widget _buildMateriaStrip() {
-    final aula = _materiaSeleccionada?.aula;
-    return Container(
-      color: AppColors.upecYellow,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 40,
-            child: Row(
-              children: [
-                const Icon(Icons.menu_book, size: 17, color: Color(0xFF2B1F00)),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<Materia>(
-                      value: _materiaSeleccionada,
-                      hint: const Text(
-                        'Seleccionar materia',
-                        style: TextStyle(
-                          color: Color(0xFF2B1F00),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
+  void _seleccionarMateria(Materia materia) {
+    if (!materia.horarioActivo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fuera del horario establecido')),
+      );
+      return;
+    }
+    if (_materiaSeleccionada?.id == materia.id) return;
+    setState(() {
+      _materiaSeleccionada = materia;
+      _estudiantes = [];
+      _cargando = true;
+      _selectedTab = 0;
+      _filtro = '';
+      _searchController.clear();
+    });
+    _cargarAsistencias();
+  }
+
+  void _cambiarMateria() {
+    setState(() {
+      _materiaSeleccionada = null;
+      _estudiantes = [];
+      _selectedTab = 0;
+      _cargando = false;
+      _filtro = '';
+      _searchController.clear();
+    });
+  }
+
+  Widget _buildMateriaSelection() {
+    final colors = Theme.of(context).colorScheme;
+    if (_cargando && _materias.isEmpty && !_errorCarga) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.upecGreen),
+      );
+    }
+    if (_errorCarga && _materias.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('No se pudieron cargar las materias.'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _cargarDatos,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_materias.isEmpty) {
+      return Center(
+        child: Text(
+          'No hay materias disponibles para esta cuenta.',
+          style: TextStyle(color: colors.onSurfaceVariant),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      children: [
+        Text(
+          'Selecciona una materia',
+          style: TextStyle(
+            color: colors.onSurface,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Elige una materia para ver sus estudiantes y asistencia.',
+          style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        for (final materia in _materias)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _seleccionarMateria(materia),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 68),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        materia.horarioActivo
+                            ? Icons.menu_book
+                            : Icons.schedule,
+                        color: materia.horarioActivo
+                            ? AppColors.upecGreen
+                            : colors.onSurfaceVariant,
                       ),
-                      isExpanded: true,
-                      dropdownColor: Colors.white,
-                      icon: const Icon(Icons.arrow_drop_down,
-                          color: Colors.black87),
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      items: _materias
-                          .map(
-                            (materia) => DropdownMenuItem(
-                              value: materia,
-                              child: Text(
-                                '${materia.codigo}: ${materia.nombre}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${materia.codigo}: ${materia.nombre}',
+                              style: TextStyle(
+                                color: colors.onSurface,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
                               ),
                             ),
-                          )
-                          .toList(),
-                      onChanged: (materia) {
-                        if (materia == null) return;
-                        setState(() {
-                          _materiaSeleccionada = materia;
-                          _estudiantes = [];
-                          _cargando = true;
-                        });
-                        _cargarAsistencias();
-                      },
-                    ),
+                            const SizedBox(height: 4),
+                            Text(
+                              materia.horarioActivo
+                                  ? materia.horario.replaceAll('\n', ' · ')
+                                  : 'Fuera del horario establecido',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: materia.horarioActivo
+                                    ? colors.onSurfaceVariant
+                                    : AppColors.stateAbsent,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.upecGreen,
-                    border: Border.all(color: AppColors.upecGreenDark),
-                    borderRadius: BorderRadius.circular(5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedMateriaHeader() {
+    final materia = _materiaSeleccionada!;
+    final aula = materia.aula;
+    return Container(
+      color: AppColors.upecYellow,
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      child: Row(
+        children: [
+          const Icon(Icons.menu_book, color: Color(0xFF2B1F00), size: 19),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${materia.codigo}: ${materia.nombre}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF2B1F00),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
                   ),
-                  child: Text(
-                    aula == null || aula == 'No indicado'
-                        ? 'AULA N/D'
-                        : aula.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                    ),
+                ),
+                Text(
+                  materia.nivelParalelo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF2B1F00),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          if (_materiaSeleccionada case final materia?)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 4, 3),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.schedule, size: 13, color: Colors.black87),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      '${materia.nivelParalelo} · '
-                      '${materia.horario.replaceAll('\n', ' · ')}',
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF2B1F00),
-                        fontSize: 9,
-                        height: 1.2,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+          TextButton.icon(
+            onPressed: _cambiarMateria,
+            icon: const Icon(Icons.swap_horiz, size: 17),
+            label: const Text('Cambiar'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.upecGreenDark,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          if (aula.isNotEmpty && aula != 'No indicado')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.upecGreen,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                aula.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
         ],

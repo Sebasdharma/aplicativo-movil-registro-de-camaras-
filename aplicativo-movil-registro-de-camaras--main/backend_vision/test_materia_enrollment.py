@@ -90,6 +90,38 @@ class MateriaEnrollmentTests(unittest.TestCase):
         conn.close()
         self.assertEqual(level, "Séptimo A - Mañana")
 
+    def test_init_db_keeps_enrolled_demo_students_active(self):
+        conn = database.get_db()
+        conn.execute(
+            """
+            INSERT INTO estudiantes
+                (codigo_estudiantil, nombre_completo, nivel_paralelo)
+            VALUES (?, ?, ?)
+            """,
+            (
+                "UPEC-2026-001",
+                "Reina Gordon Jhoel Sebastian",
+                "7mo Semestre - Paralelo AM",
+            ),
+        )
+        student_id = conn.execute(
+            "SELECT id FROM estudiantes WHERE codigo_estudiantil = ?",
+            ("UPEC-2026-001",),
+        ).fetchone()["id"]
+        database.inscribir_estudiante_en_materia(conn.cursor(), student_id, 1)
+        conn.commit()
+        conn.close()
+
+        database.init_db()
+
+        conn = database.get_db()
+        student = conn.execute(
+            "SELECT activo FROM estudiantes WHERE codigo_estudiantil = ?",
+            ("UPEC-2026-001",),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(student["activo"], 1)
+
     def test_manual_attendance_rejects_student_not_enrolled_in_course(self):
         with self.assertRaisesRegex(ValueError, "no está inscrito"):
             database.registrar_asistencia_db(self.student_two, 1)
@@ -127,6 +159,35 @@ class MateriaEnrollmentTests(unittest.TestCase):
             [(period["inicio"], period["fin"]) for period in periods],
             [("10:00", "11:00"), ("11:00", "12:00"), ("12:00", "13:00")],
         )
+
+    def test_materias_report_whether_their_schedule_is_currently_active(self):
+        conn = database.get_db()
+        conn.executemany(
+            """
+            INSERT INTO materias
+                (codigo_materia, nombre_materia, docente_id, docente_nombre,
+                 horario)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("ACTIVE-001", "Materia activa", 1, "Docente", "Martes 10:00-11:00"),
+                ("INACTIVE-001", "Materia fuera de horario", 1, "Docente",
+                 "Martes 11:00-12:00"),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        with patch.object(database, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 27, 10, 30, 0)
+            materias = database.obtener_materias_docente(1)
+
+        estado_por_codigo = {
+            materia["codigo_materia"]: materia["horario_activo"]
+            for materia in materias
+        }
+        self.assertTrue(estado_por_codigo["ACTIVE-001"])
+        self.assertFalse(estado_por_codigo["INACTIVE-001"])
 
     def test_facial_scan_in_first_hour_marks_only_the_current_hour(self):
         with patch.object(database, "datetime", wraps=datetime) as clock:
@@ -341,7 +402,7 @@ class MateriaEnrollmentTests(unittest.TestCase):
                 estado="No válido",
             )
 
-    def test_migration_hides_known_demo_students_and_preserves_history(self):
+    def test_migration_preserves_enrolled_demo_students_and_history(self):
         conn = database.get_db()
         conn.execute(
             """
@@ -386,13 +447,21 @@ class MateriaEnrollmentTests(unittest.TestCase):
             """,
             (self.student_one,),
         ).fetchone()[0]
+        demo_enrollment = conn.execute(
+            """
+            SELECT COUNT(*) FROM materia_estudiantes
+            WHERE materia_id = 1 AND estudiante_id = ?
+            """,
+            (demo_student,),
+        ).fetchone()[0]
         attendance_count = conn.execute(
             "SELECT COUNT(*) FROM asistencias WHERE materia_id = 1"
         ).fetchone()[0]
         conn.close()
 
-        self.assertEqual(demo_active, 0)
+        self.assertEqual(demo_active, 1)
         self.assertEqual(enrollment, 1)
+        self.assertEqual(demo_enrollment, 1)
         self.assertEqual(attendance_count, 2)
         self.assertEqual(database.obtener_dispositivos_iot(), [])
 
