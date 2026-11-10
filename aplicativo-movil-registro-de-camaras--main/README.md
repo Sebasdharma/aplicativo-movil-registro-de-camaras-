@@ -121,6 +121,15 @@ La app móvil no cambia, porque sigue hablando con la API Flask.
    *Table Editor* de Supabase. Tienen RLS activado sin políticas, así que la API
    pública de Supabase no las expone; solo el backend accede con la contraseña.
 
+Para cargar a los estudiantes de demostración (el equipo, con sus fotos de
+`dataset_estudiantes/`) e inscribirlos en las materias, ejecuta una vez
+`python sembrar_estudiantes_demo.py` (o `--materia 1 --materia 2` para elegir
+materias). El servidor ya no los vuelve a crear en cada arranque.
+
+Para que un docente entre con su cuenta Microsoft sin registrarlo a mano, agrega
+su correo a `ASISTECH_DOCENTES` en `.env` (separados por comas). Las demás
+cuentas `@upec.edu.ec`, como las de estudiantes, no obtienen acceso de docente.
+
 Las fotos faciales siguen guardándose en `backend_vision/dataset_estudiantes/`
 del computador que ejecuta el backend; en la base solo se guarda el nombre del
 archivo. Para volver a SQLite basta con vaciar o comentar `DATABASE_URL`.

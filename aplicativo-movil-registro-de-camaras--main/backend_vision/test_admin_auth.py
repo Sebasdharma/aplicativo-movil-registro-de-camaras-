@@ -211,6 +211,56 @@ class AdminAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("no está registrada como docente", response.get_json()["mensaje"])
 
+    def test_authorized_teacher_email_is_registered_on_first_microsoft_sign_in(self):
+        claims = {
+            "tid": server.MICROSOFT_TENANT_ID,
+            "oid": "new-teacher-object-id",
+            "preferred_username": "Nuevo.Docente@upec.edu.ec",
+            "name": "Nuevo Docente",
+        }
+        with patch.dict(os.environ, {
+            "ASISTECH_DOCENTES": "otro@upec.edu.ec, nuevo.docente@upec.edu.ec",
+        }), patch.object(auth_routes, "verificar_token_microsoft", return_value=claims):
+            response = self.client.post("/api/auth/microsoft", json={
+                "id_token": "signed-new-teacher-token",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        docente = response.get_json()["docente"]
+        self.assertEqual(docente["nombre_completo"], "Nuevo Docente")
+        conn = database.get_db()
+        try:
+            materias_admin = conn.execute(
+                "SELECT COUNT(*) FROM materias WHERE docente_id = ?",
+                (docente["id"],),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(materias_admin, 0)
+
+    def test_unlisted_upec_account_is_not_registered_as_teacher(self):
+        claims = {
+            "tid": server.MICROSOFT_TENANT_ID,
+            "oid": "student-object-id",
+            "preferred_username": "estudiante@upec.edu.ec",
+        }
+        with patch.dict(os.environ, {"ASISTECH_DOCENTES": "docente@upec.edu.ec"}), \
+                patch.object(auth_routes, "verificar_token_microsoft", return_value=claims):
+            response = self.client.post("/api/auth/microsoft", json={
+                "id_token": "signed-student-token",
+            })
+
+        self.assertEqual(response.status_code, 403)
+        conn = database.get_db()
+        try:
+            registrado = conn.execute(
+                "SELECT 1 FROM docentes WHERE email_institucional = ?",
+                ("estudiante@upec.edu.ec",),
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertIsNone(registrado)
+
     def test_valid_registered_teacher_can_sign_in_with_microsoft(self):
         conn = database.get_db()
         conn.execute("""
@@ -322,7 +372,7 @@ class TabletCameraApiTests(unittest.TestCase):
         response = self.client.get("/tablet-camera")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Permitir c\xc3\xa1mara y conectar", response.data)
+        self.assertIn("Activar Cámara de Puerta".encode(), response.data)
         self.assertIn(b"facingMode: { ideal: 'user' }", response.data)
         self.assertIn(b"speechSynthesis.speak(utterance)", response.data)
         self.assertIn(b"Fuera de horario", response.data)

@@ -74,12 +74,16 @@ class _InstitutionalDashboardScreenState
         docenteId: widget.docente.id,
       );
       if (!mounted) return;
+      final primera = materias.isNotEmpty ? materias.first : null;
       setState(() {
         _materias = materias;
-        _materiaSeleccionada = null;
+        _materiaSeleccionada = primera;
         _estudiantes = [];
         _cargando = false;
       });
+      if (primera != null) {
+        await _cargarAsistencias();
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/app_colors.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import 'kiosk_terminal_screen.dart';
 import 'live_face_scan_screen.dart';
 
 class InstitutionalCameraView extends StatefulWidget {
@@ -562,6 +563,40 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: colors.onSurface),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const KioskTerminalScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(
+                Icons.sensor_occupied,
+                size: 17,
+                color: Color(0xFF00E676),
+              ),
+              label: const Text(
+                'Modo Terminal de Puerta (Kiosco)',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),

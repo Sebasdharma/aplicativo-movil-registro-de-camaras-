@@ -298,6 +298,17 @@ def _ensure_columns(cursor, table, columns):
         if name not in existing:
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
+# Equipo del proyecto: (código, nombre, paralelo, correo, foto en dataset_estudiantes).
+ESTUDIANTES_DEMOSTRACION = [
+    ("UPEC-2026-001", "Reina Gordon Jhoel Sebastian", "Séptimo A - Mañana", "jhoel.reina@upec.edu.ec", "UPEC-2026-001-e4023eeb5a4341c28b2262f889ea08cd.jpg"),
+    ("UPEC-2026-002", "Cadena Edelina", "Séptimo A - Mañana", "edelina.cadena@upec.edu.ec", "UPEC-2026-002-9a386eaaf67449f28900fea2eacd0c9c.jpg"),
+    ("UPEC-2026-003", "Lema Jordy", "Séptimo A - Mañana", "jordy.lema@upec.edu.ec", "UPEC-2026-003-185bc90e89284403a712706986c9c24e.jpg"),
+    ("UPEC-2026-004", "Ponce Melisa", "Séptimo A - Mañana", "melisa.ponce@upec.edu.ec", "UPEC-2026-004-1dbc9cede9494fe0a189cf0f45e26e6f.jpg"),
+    ("UPEC-2026-005", "Carlosama Daniel", "Séptimo A - Mañana", "daniel.carlosama@upec.edu.ec", ""),
+    ("UPEC-2026-006", "Montenegro Valeria", "Séptimo A - Mañana", "valeria.montenegro@upec.edu.ec", ""),
+    ("UPEC-2026-007", "Chasi Joel", "Séptimo A - Mañana", "joel.chasi@upec.edu.ec", "UPEC-2026-007-4ee30b4ad4514153ab28674726d389d4.jpg"),
+]
+
 TABLAS = (
     "docentes",
     "materias",
@@ -719,14 +730,9 @@ def init_db():
                 ),
             )
 
-    estudiantes_demostracion = [
-        ("UPEC-2026-001", "Reina Gordon Jhoel Sebastian"),
-        ("UPEC-2026-002", "Cadena Edelina"),
-        ("UPEC-2026-003", "Lema Jordy"),
-        ("UPEC-2026-004", "Ponce Melisa"),
-        ("UPEC-2026-005", "Carlosama Daniel"),
-        ("UPEC-2026-006", "Montenegro Valeria"),
-    ]
+    # Los estudiantes de demostración sin foto, sin inscripciones y sin
+    # asistencias se ocultan. Para cargarlos con sus fotos usa
+    # sembrar_estudiantes_demo.py (no se fuerzan en cada arranque).
     cursor.executemany(
         """
         UPDATE estudiantes SET activo = 0
@@ -741,7 +747,7 @@ def init_db():
               WHERE asistencias.estudiante_id = estudiantes.id
           )
         """,
-        estudiantes_demostracion,
+        [(codigo, nombre) for codigo, nombre, *_ in ESTUDIANTES_DEMOSTRACION],
     )
     cursor.execute(
         """

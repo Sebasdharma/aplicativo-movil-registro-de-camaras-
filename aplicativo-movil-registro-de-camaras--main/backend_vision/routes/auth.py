@@ -1,9 +1,20 @@
+import os
+
 from flask import Blueprint, current_app, jsonify, request
 import jwt
-from database import get_db
+from database import get_db, insertar_y_obtener_id
 from runtime import MICROSOFT_TENANT_ID, verificar_token_microsoft
 
 auth_api = Blueprint('auth_api', __name__)
+
+
+def docentes_autorizados():
+    """Correos que pueden registrarse solos como docentes (ASISTECH_DOCENTES en .env)."""
+    return {
+        correo.strip().lower()
+        for correo in os.environ.get("ASISTECH_DOCENTES", "").split(",")
+        if correo.strip()
+    }
 
 @auth_api.route("/api/auth/admin", methods=["POST"])
 def api_auth_admin():
@@ -86,6 +97,39 @@ def api_auth_microsoft():
         ).fetchone()
     finally:
         conn.close()
+
+    if docente is None and email.strip().lower() in docentes_autorizados():
+        # Solo los correos autorizados se registran solos como docentes; las
+        # cuentas de estudiantes de @upec.edu.ec siguen sin acceso. Las materias
+        # se asignan después (columna docente_id de la tabla materias).
+        nombre = claims.get("name") or email.split("@")[0].replace(".", " ").title()
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            nuevo_id = insertar_y_obtener_id(
+                cursor,
+                """
+                INSERT INTO docentes (email_institucional, nombre_completo, facultad, carrera, auth_provider)
+                VALUES (?, ?, ?, ?, 'microsoft')
+                """,
+                (
+                    email.strip(),
+                    nombre,
+                    "Facultad de Industrias Agropecuarias y Ciencias Ambientales (FIACA)",
+                    "Carrera de Computación",
+                ),
+            )
+            docente = cursor.execute(
+                """
+                SELECT id, email_institucional, nombre_completo, cedula, facultad, carrera
+                FROM docentes
+                WHERE id = ?
+                """,
+                (nuevo_id,),
+            ).fetchone()
+            conn.commit()
+        finally:
+            conn.close()
 
     if docente is None:
         return jsonify({

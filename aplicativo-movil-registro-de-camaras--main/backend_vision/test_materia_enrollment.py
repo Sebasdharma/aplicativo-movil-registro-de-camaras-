@@ -609,5 +609,58 @@ class MateriaEnrollmentTests(unittest.TestCase):
         self.assertEqual(replacement["nombre_materia"], "Seguridad Informática")
 
 
+
+
+class DemoStudentSeedTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path_patch = patch.object(
+            database, "DB_PATH", os.path.join(self.temp_dir.name, "seed.db")
+        )
+        self.db_path_patch.start()
+        self.addCleanup(self.db_path_patch.stop)
+        self.addCleanup(self.temp_dir.cleanup)
+        _pruebas_db.reiniciar_base_postgres()
+
+    def test_server_start_does_not_force_demo_students(self):
+        database.init_db()
+        conn = database.get_db()
+        try:
+            total = conn.execute("SELECT COUNT(*) FROM estudiantes").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(total, 0)
+
+    def test_seed_script_is_idempotent_and_only_links_existing_photos(self):
+        import sembrar_estudiantes_demo
+
+        dataset_dir = os.path.join(self.temp_dir.name, "faces")
+        os.makedirs(dataset_dir)
+        codigo, _, _, _, foto = database.ESTUDIANTES_DEMOSTRACION[0]
+        open(os.path.join(dataset_dir, foto), "wb").close()
+        with patch.object(sembrar_estudiantes_demo, "DATASET_DIR", dataset_dir), \
+                patch("builtins.print"):
+            sembrar_estudiantes_demo.sembrar([1, 2])
+            sembrar_estudiantes_demo.sembrar([1, 2])
+
+        conn = database.get_db()
+        try:
+            estudiantes = conn.execute(
+                "SELECT COUNT(*) FROM estudiantes WHERE activo = 1"
+            ).fetchone()[0]
+            inscripciones = conn.execute(
+                "SELECT COUNT(*) FROM materia_estudiantes"
+            ).fetchone()[0]
+            fotos = conn.execute(
+                "SELECT f.foto_path FROM fotos_faciales_estudiantes f "
+                "JOIN estudiantes e ON e.id = f.estudiante_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        total = len(database.ESTUDIANTES_DEMOSTRACION)
+        self.assertEqual(estudiantes, total)
+        self.assertEqual(inscripciones, total * 2)
+        self.assertEqual([row[0] for row in fotos], [foto])
+
 if __name__ == "__main__":
     unittest.main()
