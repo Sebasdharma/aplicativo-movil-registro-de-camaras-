@@ -1,6 +1,8 @@
 import cv2
 import os
-from database import init_db, get_db, inscribir_estudiante_en_materia
+from database import (
+    init_db, get_db, inscribir_estudiante_en_materia, insertar_y_obtener_id,
+)
 
 def enrolar_estudiante_camara(codigo, nombre, materia_id, paralelo=""):
     init_db()
@@ -43,7 +45,7 @@ def enrolar_estudiante_camara(codigo, nombre, materia_id, paralelo=""):
             foto_path = os.path.join(dataset_dir, foto_filename)
             cv2.imwrite(foto_path, frame)
             
-            # Guardar o actualizar en SQLite
+            # Guardar o actualizar en la base de datos
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM estudiantes WHERE codigo_estudiantil = ?", (codigo,))
@@ -59,7 +61,8 @@ def enrolar_estudiante_camara(codigo, nombre, materia_id, paralelo=""):
                     (nombre, paralelo, foto_filename, estudiante_id),
                 )
             else:
-                cursor.execute(
+                estudiante_id = insertar_y_obtener_id(
+                    cursor,
                     """
                     INSERT INTO estudiantes
                         (codigo_estudiantil, nombre_completo, nivel_paralelo, foto_path)
@@ -67,7 +70,6 @@ def enrolar_estudiante_camara(codigo, nombre, materia_id, paralelo=""):
                     """,
                     (codigo, nombre, paralelo, foto_filename),
                 )
-                estudiante_id = cursor.lastrowid
             inscribir_estudiante_en_materia(cursor, estudiante_id, materia_id)
             conn.commit()
             conn.close()

@@ -1,3 +1,4 @@
+import _pruebas_db  # Debe ir primero: aísla la base de datos real.
 import unittest
 import threading
 from unittest.mock import patch

@@ -1,3 +1,4 @@
+import _pruebas_db  # Debe ir primero: aísla la base de datos real.
 import os
 import tempfile
 import unittest
@@ -33,6 +34,7 @@ class AdminAuthTests(unittest.TestCase):
         self.db_path_patch.start()
         self.addCleanup(self.db_path_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
+        _pruebas_db.reiniciar_base_postgres()
         server.init_db()
         with server.tablet_cameras_lock:
             server.tablet_cameras.clear()
@@ -211,11 +213,13 @@ class ManualAttendanceApiTests(unittest.TestCase):
         self.db_path_patch.start()
         self.addCleanup(self.db_path_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
+        _pruebas_db.reiniciar_base_postgres()
         server.init_db()
         self.client = server.app.test_client()
 
         conn = database.get_db()
-        cursor = conn.execute(
+        self.student_id = database.insertar_y_obtener_id(
+            conn.cursor(),
             """
             INSERT INTO estudiantes (
                 codigo_estudiantil, nombre_completo, nivel_paralelo
@@ -223,7 +227,6 @@ class ManualAttendanceApiTests(unittest.TestCase):
             """,
             ("API-001", "Estudiante API", "Séptimo A"),
         )
-        self.student_id = cursor.lastrowid
         database.inscribir_estudiante_en_materia(conn.cursor(), self.student_id, 1)
         conn.commit()
         conn.close()
@@ -269,6 +272,7 @@ class TabletCameraApiTests(unittest.TestCase):
         db_path_patch.start()
         self.addCleanup(db_path_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
+        _pruebas_db.reiniciar_base_postgres()
         server.init_db()
         with server.tablet_cameras_lock:
             server.tablet_cameras.clear()

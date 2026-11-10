@@ -1,3 +1,4 @@
+import _pruebas_db  # Debe ir primero: aísla la base de datos real.
 import base64
 import os
 import threading
@@ -38,6 +39,7 @@ class FaceEnrollmentTests(unittest.TestCase):
         )
         self.validation_patch.start()
         self.client = server.app.test_client()
+        _pruebas_db.reiniciar_base_postgres()
         database.init_db()
         success, encoded = cv2.imencode(
             ".jpg", np.zeros((120, 120, 3), dtype=np.uint8)

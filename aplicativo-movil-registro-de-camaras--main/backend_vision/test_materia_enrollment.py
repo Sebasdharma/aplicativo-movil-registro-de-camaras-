@@ -1,3 +1,4 @@
+import _pruebas_db  # Debe ir primero: aísla la base de datos real.
 import os
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ class MateriaEnrollmentTests(unittest.TestCase):
         self.db_path_patch.start()
         self.addCleanup(self.db_path_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
+        _pruebas_db.reiniciar_base_postgres()
         database.init_db()
         self.conn = database.get_db()
         self.conn.executemany(

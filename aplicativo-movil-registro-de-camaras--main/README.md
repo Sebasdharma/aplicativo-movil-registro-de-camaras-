@@ -75,6 +75,56 @@ El backend proporciona la API de la app y una página web local (`/tablet-camera
 para usar la cámara de una tablet desde Chrome sin instalar la app móvil.
 La página requiere HTTPS local y permiso de cámara.
 
+#### Base de datos en la nube (Supabase / PostgreSQL)
+
+Por defecto el backend guarda los datos en SQLite (`backend_vision/data/buhopass.db`).
+Si configuras `DATABASE_URL`, usa PostgreSQL en Supabase: todos los computadores
+que ejecuten el backend verán los mismos docentes, estudiantes y asistencias.
+La app móvil no cambia, porque sigue hablando con la API Flask.
+
+1. Crea un proyecto gratuito en [supabase.com](https://supabase.com) y guarda la
+   contraseña de la base de datos.
+2. En el proyecto, pulsa **Connect** (o *Project Settings → Database*), elige
+   **Session pooler** y copia la cadena `postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-...pooler.supabase.com:5432/postgres`.
+   Usa el *Session pooler*: la conexión directa (`db.xxxx.supabase.co`) solo
+   funciona en redes con IPv6.
+3. En `backend_vision`, copia la plantilla y pega la cadena en `DATABASE_URL`,
+   reemplazando `[YOUR-PASSWORD]` (codifica símbolos: `@`→`%40`, `#`→`%23`,
+   `/`→`%2F`, `:`→`%3A`):
+
+   ```powershell
+   copy .env.example .env
+   notepad .env
+   ```
+
+   `.env` está en `.gitignore`: **nunca subas la contraseña a GitHub**.
+4. Instala las dependencias y copia los datos actuales de SQLite a Supabase
+   (solo la primera vez; el archivo SQLite no se modifica):
+
+   ```powershell
+   pip install -r requirements.txt
+   python migrar_a_supabase.py
+   ```
+
+   El script muestra cuántas filas copió por tabla. Si la base en la nube ya
+   tiene datos se detiene; `python migrar_a_supabase.py --reemplazar` los borra y
+   copia de nuevo.
+5. Inicia el backend normalmente con `python server.py`. Las tablas aparecen en
+   *Table Editor* de Supabase. Tienen RLS activado sin políticas, así que la API
+   pública de Supabase no las expone; solo el backend accede con la contraseña.
+
+Las fotos faciales siguen guardándose en `backend_vision/dataset_estudiantes/`
+del computador que ejecuta el backend; en la base solo se guarda el nombre del
+archivo. Para volver a SQLite basta con vaciar o comentar `DATABASE_URL`.
+
+Las pruebas siempre usan bases temporales y nunca tocan Supabase. Para
+ejecutarlas también contra un PostgreSQL **desechable** (se borran sus tablas):
+
+```powershell
+$env:ASISTECH_TEST_DATABASE_URL = "postgresql://postgres@localhost:5432/asistech_test"
+python -m unittest
+```
+
 #### Usar la cámara de una tablet sin instalar AsisTech
 
 1. Conecta el computador, el teléfono y la tablet a la misma Wi-Fi. Averigua

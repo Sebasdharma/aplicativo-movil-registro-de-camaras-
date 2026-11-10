@@ -14,3 +14,7 @@ build/
 backend_vision/data/*.db
 backend_vision/dataset_estudiantes/
 backend_vision/certs/*
+
+# Contraseñas y cadenas de conexión (Supabase)
+.env
+!.env.example

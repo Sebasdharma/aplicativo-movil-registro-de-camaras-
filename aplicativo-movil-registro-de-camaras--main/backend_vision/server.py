@@ -13,7 +13,7 @@ from database import (
     init_db, get_db, registrar_asistencia_db, obtener_resumen_asistencia,
     obtener_materias_docente, obtener_dispositivos_iot,
     inscribir_estudiante_en_materia, aplicar_ausencias_programadas,
-    obtener_periodos_lectivos,
+    obtener_periodos_lectivos, insertar_y_obtener_id,
 )
 from carchito_voice import CarchitoVoiceAssistant
 from face_engine import FaceEngine
@@ -758,11 +758,10 @@ def api_enrolar():
             WHERE id = ?
             """, (nombre.strip(), paralelo, email, estudiante_id))
         else:
-            cursor.execute("""
+            estudiante_id = insertar_y_obtener_id(cursor, """
             INSERT INTO estudiantes (codigo_estudiantil, nombre_completo, nivel_paralelo, email, foto_path)
             VALUES (?, ?, ?, ?, ?)
             """, (codigo, nombre.strip(), paralelo, email, None))
-            estudiante_id = cursor.lastrowid
 
         if images:
             fotos_adicionales_anteriores = cursor.execute(
