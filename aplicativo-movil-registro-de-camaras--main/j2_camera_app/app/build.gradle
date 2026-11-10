@@ -1,0 +1,40 @@
+plugins {
+    id "com.android.application"
+}
+
+def apiBaseUrl = (project.findProperty("cameraApiBaseUrl") ?: "http://172.20.245.88:5000")
+        .toString()
+        .replaceAll("/+\$", "")
+
+android {
+    namespace "com.upec.asistech.j2camera"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.upec.asistech.j2camera"
+        minSdk 22
+        targetSdk 28
+        versionCode 1
+        versionName "1.0.0"
+        buildConfigField "String", "API_BASE_URL", "\"${apiBaseUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    lint {
+        disable "ExpiredTargetSdkVersion"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

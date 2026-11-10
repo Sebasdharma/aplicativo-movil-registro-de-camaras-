@@ -52,13 +52,19 @@ aplicativo-movil-registro-de-camaras-/
 │   │   └── screens/            # Pantallas (Dashboard, Carchito, Reportes)
 │   └── pubspec.yaml            # Dependencias y configuración de Flutter
 │
+├── j2_camera_app/              # APK Android independiente para Galaxy J2
+│   ├── app/src/main/           # Cliente de cámara remota en Java
+│   └── README.md               # Instalación y configuración del dispositivo
+│
 └── README.md                   # Documentación oficial del repositorio
 ```
 
 El backend es un monolito modular: `server.py` crea la aplicación y registra
 blueprints por dominio; `routes/` contiene los endpoints; `database.py`
 mantiene la persistencia SQLite; y los motores facial y de voz permanecen como
-módulos internos. Los clientes conservan las mismas rutas REST.
+módulos internos. Los clientes conservan las mismas rutas REST. `j2_camera_app`
+es un cliente Android adicional para un Galaxy J2: espera órdenes del backend
+en la red local y transmite imágenes de la cámara frontal durante el escaneo.
 
 ---
 
@@ -146,6 +152,22 @@ requiere Flutter y Dart configurados como plugins, además del Android SDK.
 La publicación requiere configurar la firma y el identificador de la
 aplicación Android, la autenticación institucional de Microsoft y una URL
 HTTPS pública para el backend.
+
+### 4. Compilar la cámara Android para Galaxy J2
+
+El cliente independiente está pensado para Android 5.1.1 y se instala mediante
+APK. Desde la carpeta principal del proyecto, entra a `j2_camera_app`, define
+la dirección del backend y compila con el wrapper Gradle disponible en la app
+Flutter:
+
+```powershell
+cd j2_camera_app
+..\mobile_app\android\gradlew.bat assembleRelease -PcameraApiBaseUrl=http://IP_DEL_SERVIDOR:5000
+```
+
+El APK se genera en `app\build\outputs\apk\release\app-release.apk`. Consulta
+[`j2_camera_app/README.md`](./j2_camera_app/README.md) para preparar el teléfono,
+conectar a la misma Wi-Fi y conocer sus permisos y límites.
 
 ---
 
