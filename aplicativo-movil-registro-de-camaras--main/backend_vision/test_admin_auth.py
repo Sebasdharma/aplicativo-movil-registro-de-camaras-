@@ -8,6 +8,7 @@ from unittest.mock import patch
 import database
 import jwt
 from openpyxl import load_workbook
+from routes import auth as auth_routes
 
 _server_import_dir = tempfile.TemporaryDirectory()
 _server_import_db_patch = patch.object(
@@ -38,6 +39,45 @@ class AdminAuthTests(unittest.TestCase):
             server.tablet_cameras.clear()
         self.client = server.app.test_client()
 
+    def test_app_factory_registers_domain_blueprints_and_existing_routes(self):
+        application = server.create_app()
+
+        self.assertEqual(
+            {
+                "auth_api",
+                "academic_api",
+                "attendance_api",
+                "device_api",
+                "voice_api",
+                "camera_api",
+                "enrollment_api",
+            },
+            set(application.blueprints),
+        )
+        routes = {
+            rule.rule for rule in application.url_map.iter_rules()
+        }
+        self.assertTrue({
+            "/api/auth/admin",
+            "/api/auth/microsoft",
+            "/api/materias",
+            "/api/asistencia/resumen",
+            "/api/asistencia/reporte/excel",
+            "/api/asistencia/manual",
+            "/api/dispositivos",
+            "/api/carchito/comando",
+            "/api/camara/iniciar",
+            "/api/camara/detener",
+            "/api/camara/tablet/dispositivos",
+            "/tablet-camera",
+            "/api/camara/tablet/heartbeat",
+            "/api/camara/tablet/resultado",
+            "/api/camara/tablet/comando",
+            "/api/camara/telefono/escanear",
+            "/api/estudiantes/enrolar",
+        }.issubset(routes))
+        self.assertEqual(application.config["MAX_CONTENT_LENGTH"], 12 * 1024 * 1024)
+
     def test_admin_login_returns_generic_administrator_profile(self):
         response = self.client.post("/api/auth/admin")
 
@@ -57,7 +97,7 @@ class AdminAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_microsoft_login_requires_an_identity_token(self):
-        with patch.object(server, "verificar_token_microsoft") as verify_token:
+        with patch.object(auth_routes, "verificar_token_microsoft") as verify_token:
             response = self.client.post("/api/auth/microsoft", json={
                 "email": "admin@upec.edu.ec",
             })
@@ -145,7 +185,7 @@ class AdminAuthTests(unittest.TestCase):
 
     def test_microsoft_login_rejects_invalid_identity_token(self):
         with patch.object(
-            server,
+            auth_routes,
             "verificar_token_microsoft",
             side_effect=jwt.InvalidTokenError("invalid signature"),
         ):
@@ -161,7 +201,7 @@ class AdminAuthTests(unittest.TestCase):
             "oid": "student-object-id",
             "preferred_username": "student@upec.edu.ec",
         }
-        with patch.object(server, "verificar_token_microsoft", return_value=claims):
+        with patch.object(auth_routes, "verificar_token_microsoft", return_value=claims):
             response = self.client.post("/api/auth/microsoft", json={
                 "id_token": "signed-student-token",
             })
@@ -189,7 +229,7 @@ class AdminAuthTests(unittest.TestCase):
             "oid": "teacher-object-id",
             "preferred_username": "teacher@upec.edu.ec",
         }
-        with patch.object(server, "verificar_token_microsoft", return_value=claims):
+        with patch.object(auth_routes, "verificar_token_microsoft", return_value=claims):
             response = self.client.post("/api/auth/microsoft", json={
                 "id_token": "signed-teacher-token",
             })
@@ -281,7 +321,7 @@ class TabletCameraApiTests(unittest.TestCase):
         self.assertIn(b"Permitir c\xc3\xa1mara y conectar", response.data)
         self.assertIn(b"facingMode: { ideal: 'user' }", response.data)
         self.assertIn(b"speechSynthesis.speak(utterance)", response.data)
-        self.assertIn(b"fuera del horario de clases", response.data)
+        self.assertIn(b"Fuera de horario", response.data)
         self.assertIn(b"/api/camara/tablet/resultado", response.data)
 
     def test_phone_can_discover_tablet_and_deliver_start_command_once(self):

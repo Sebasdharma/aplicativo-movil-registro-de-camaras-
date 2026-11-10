@@ -36,11 +36,14 @@
 aplicativo-movil-registro-de-camaras-/
 │
 ├── backend_vision/             # Motor de IA, Visión por Computador y API REST
+│   ├── app_config.py           # Configuración de la aplicación Flask
 │   ├── database.py             # Base de datos SQLite y persistencia de asistencias
 │   ├── face_engine.py          # Detección y reconocimiento facial en vivo (OpenCV)
 │   ├── models/                 # Modelos faciales YuNet y SFace requeridos
 │   ├── carchito_voice.py       # Asistente virtual de voz "Carchito" (TTS & STT)
-│   ├── server.py               # API REST del sistema
+│   ├── routes/                 # Endpoints REST agrupados por dominio
+│   ├── runtime.py              # Servicios compartidos y estado del proceso
+│   ├── server.py               # Fábrica Flask y arranque del sistema
 │   └── requirements.txt        # Dependencias de Python
 │
 ├── mobile_app/                 # Aplicación Móvil en Flutter (Dart)
@@ -51,6 +54,11 @@ aplicativo-movil-registro-de-camaras-/
 │
 └── README.md                   # Documentación oficial del repositorio
 ```
+
+El backend es un monolito modular: `server.py` crea la aplicación y registra
+blueprints por dominio; `routes/` contiene los endpoints; `database.py`
+mantiene la persistencia SQLite; y los motores facial y de voz permanecen como
+módulos internos. Los clientes conservan las mismas rutas REST.
 
 ---
 
