@@ -36,6 +36,7 @@ class Materia {
   final String aula;
   final String periodo;
   final String nivelParalelo;
+  final bool horarioActivo;
 
   Materia({
     required this.id,
@@ -46,6 +47,7 @@ class Materia {
     required this.aula,
     required this.periodo,
     required this.nivelParalelo,
+    required this.horarioActivo,
   });
 
   factory Materia.fromJson(Map<String, dynamic> json) {
@@ -58,6 +60,7 @@ class Materia {
       aula: json['aula'] as String? ?? '',
       periodo: json['periodo'] as String? ?? '',
       nivelParalelo: json['nivel_paralelo'] as String? ?? '',
+      horarioActivo: json['horario_activo'] as bool? ?? false,
     );
   }
 }

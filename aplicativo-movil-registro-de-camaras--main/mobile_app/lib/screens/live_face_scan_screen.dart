@@ -145,7 +145,6 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
 
       final faces = result['rostros'] as List<dynamic>? ?? const [];
       final newlyIdentified = <String>[];
-      var attendanceRegistered = false;
       var attendanceChanged = false;
       var attendanceRejected = false;
       final confirmingIdentity = faces.any(
@@ -173,9 +172,6 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
         if (face['estado'] == 'fuera_horario') {
           attendanceRejected = true;
         } else {
-          attendanceRegistered = attendanceRegistered ||
-              face['asistencia_registrada'] == true ||
-              face['registro_nuevo'] == true;
           attendanceChanged =
               attendanceChanged || face['registro_nuevo'] == true;
         }
@@ -185,56 +181,26 @@ class _LiveFaceScanScreenState extends State<LiveFaceScanScreen> {
         _status = faces.isEmpty
             ? 'Buscando rostros...'
             : fueraDeHorario != null
-                ? 'Estudiante detectado y reconocido: '
-                    '${fueraDeHorario['nombre'] ?? 'Estudiante'}. '
-                    'Asistencia no registrada por horario: '
-                    '${fueraDeHorario['mensaje'] ?? 'revisa el horario de clase.'}'
+                ? 'Fuera de horario'
                 : hasIdentified
-                    ? attendanceRegistered
-                        ? 'Reconocido: ${faces.whereType<Map<String, dynamic>>().where((face) => face['estado'] == 'identificado').map((face) => face['nombre'] ?? 'Estudiante').join(', ')}. Presente.'
-                        : 'Identidad reconocida: '
-                            '${newlyIdentified.isNotEmpty ? newlyIdentified.join(', ') : 'Estudiante'}.'
+                    ? 'Asistencia correcta'
                     : confirmingIdentity
                         ? 'Confirmando la identidad; mantén el rostro centrado...'
                         : detectedUnknown
-                            ? 'Rostro detectado, pero no hay una coincidencia confiable.'
+                            ? 'Desconocido'
                             : 'Escaneo continuo activo.';
       });
       if (hasIdentified) _lastUnknownAnnouncementAt = null;
       if (newlyIdentified.isNotEmpty && attendanceRejected) {
-        final reason = fueraDeHorario?['mensaje']?.toString() ??
-            'no hay una clase lectiva activa.';
-        unawaited(
-          _announce(
-            'Estudiante detectado y reconocido: '
-            '${newlyIdentified.join(', ')}, '
-            'pero no se registró la asistencia. $reason',
-          ),
-        );
-      } else if (newlyIdentified.isNotEmpty && attendanceChanged) {
-        unawaited(
-          _announce(
-            'Se reconoció a ${newlyIdentified.join(', ')}. '
-            'Asistencia tomada exitosamente.',
-          ),
-        );
-      } else if (newlyIdentified.isNotEmpty && attendanceRegistered) {
-        unawaited(
-          _announce(
-            'Se reconoció a ${newlyIdentified.join(', ')}. '
-            'El estudiante ya consta presente.',
-          ),
-        );
+        unawaited(_announce('Fuera de horario'));
       } else if (newlyIdentified.isNotEmpty) {
-        unawaited(
-          _announce('Se reconoció a ${newlyIdentified.join(', ')}.'),
-        );
+        unawaited(_announce('Asistencia correcta'));
       } else if (detectedUnknown &&
           (_lastUnknownAnnouncementAt == null ||
               DateTime.now().difference(_lastUnknownAnnouncementAt!) >=
                   const Duration(seconds: 8))) {
         _lastUnknownAnnouncementAt = DateTime.now();
-        unawaited(_announce('No se reconoce al estudiante'));
+        unawaited(_announce('Desconocido'));
       }
       if (attendanceChanged) {
         widget.onAttendanceRegistered();
