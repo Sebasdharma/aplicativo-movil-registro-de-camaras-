@@ -22,18 +22,17 @@ class FaceEngineTests(unittest.TestCase):
         self.assertAlmostEqual(margin, 0.2)
 
     def test_recognition_requires_a_clear_margin_between_students(self):
-        self.assertFalse(FaceEngine._is_confident_match(0.35, 0.13))
-        self.assertFalse(FaceEngine._is_confident_match(0.8, 0.07))
+        self.assertFalse(FaceEngine._is_confident_match(0.29, 0.13))
+        self.assertFalse(FaceEngine._is_confident_match(0.8, 0.03))
+        self.assertTrue(FaceEngine._is_confident_match(0.32, 0.05))
         self.assertTrue(FaceEngine._is_confident_match(0.8, 0.1))
 
-    def test_identity_requires_three_consecutive_confident_frames(self):
+    def test_identity_confirms_immediately_with_single_confident_frame(self):
         engine = FaceEngine.__new__(FaceEngine)
         engine._pending_identities = {}
 
-        self.assertFalse(engine._confirm_identity(7, "phone-a"))
-        self.assertFalse(engine._confirm_identity(7, "phone-a"))
-        self.assertFalse(engine._confirm_identity(7, "phone-b"))
         self.assertTrue(engine._confirm_identity(7, "phone-a"))
+        self.assertTrue(engine._confirm_identity(7, "phone-b"))
 
         engine._reset_pending_identity("phone-a")
         self.assertNotIn("phone-a", engine._pending_identities)

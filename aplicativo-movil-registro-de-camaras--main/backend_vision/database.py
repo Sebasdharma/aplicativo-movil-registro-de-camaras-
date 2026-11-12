@@ -4,15 +4,26 @@ import re
 import unicodedata
 from datetime import date, datetime, timedelta
 
+from supabase_adapter import get_supabase_connection, SUPABASE_DB_URL
+
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "buhopass.db")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+USE_SUPABASE = os.environ.get("USE_SUPABASE", "true").lower() in ("true", "1", "yes")
+
 def get_db():
+    if USE_SUPABASE:
+        try:
+            return get_supabase_connection()
+        except Exception as e:
+            print(f"[DATABASE] Error al conectar con Supabase Cloud ({e}). Usando SQLite local de respaldo.")
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 def _ensure_columns(cursor, table, columns):
+    if hasattr(cursor, "_cur"):
+        return
     existing = {row["name"] for row in cursor.execute(f"PRAGMA table_info({table})")}
     for name, definition in columns.items():
         if name not in existing:
@@ -21,6 +32,10 @@ def _ensure_columns(cursor, table, columns):
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
+    if hasattr(cursor, "_cur"):
+        # Supabase PostgreSQL: tablas ya gestionadas en la nube
+        conn.close()
+        return
     
     # Tabla de Docentes Institucionales (UPEC)
     cursor.execute("""
@@ -81,6 +96,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         estudiante_id INTEGER NOT NULL,
         foto_path TEXT NOT NULL UNIQUE,
+        imagen_bytes BLOB,
         fecha_registro TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (estudiante_id) REFERENCES estudiantes (id)
     )
@@ -158,6 +174,9 @@ def init_db():
         "hora_1_hora": "TEXT DEFAULT '--:--:--'",
         "hora_2_estado": "TEXT DEFAULT 'Pendiente'",
         "hora_2_hora": "TEXT DEFAULT '--:--:--'",
+    })
+    _ensure_columns(cursor, "fotos_faciales_estudiantes", {
+        "imagen_bytes": "BLOB",
     })
     cursor.execute(
         """
@@ -274,39 +293,31 @@ def init_db():
             "COMP-701",
             "Aplicaciones Móviles",
             "Lascano Samuel",
-            "Martes 10:00-13:00 clase\n"
-            "Miércoles 10:00-11:00 tutoría\n"
-            "Jueves 10:00-13:00 clase",
+            "Martes 10:00-13:00 clase\nMiércoles 10:00-11:00 tutoría\nJueves 10:00-13:00 clase",
         ),
         (
             "COMP-702",
             "Visión por Computador",
             "Jimenez Stalin",
-            "Miércoles 09:00-10:00 tutoría\n"
-            "Viernes 11:00-13:00 clase",
+            "Miércoles 09:00-10:00 tutoría\nViernes 11:00-13:00 clase",
         ),
         (
             "COMP-703",
             "Seguridad Informática",
             "Hidalgo Jairo",
-            "Jueves 09:00-10:00 tutoría\n"
-            "Viernes 08:00-11:00 clase",
+            "Jueves 09:00-10:00 tutoría\nViernes 08:00-11:00 clase",
         ),
         (
             "COMP-704",
             "Normativas de Ingeniería de Software",
             "Lascano Samuel",
-            "Lunes 10:00-12:00 clase\n"
-            "Lunes 12:00-13:00 tutoría\n"
-            "Miércoles 11:00-13:00 clase",
+            "Lunes 10:00-12:00 clase\nLunes 12:00-13:00 tutoría\nMiércoles 11:00-13:00 clase",
         ),
         (
             "COMP-705",
             "Redes de Computadoras y Seguridades",
             "Del Hierro Milton",
-            "Martes 07:00-09:00 clase\n"
-            "Martes 09:00-10:00 tutoría\n"
-            "Jueves 07:00-09:00 clase",
+            "Martes 07:00-09:00 clase\nMartes 09:00-10:00 tutoría\nJueves 07:00-09:00 clase",
         ),
     ]
     legacy_iot = cursor.execute(
@@ -867,16 +878,14 @@ def registrar_asistencia_db(
             periodo_actual = _periodo_actual(periodos, ahora)
             if periodo_actual is None:
                 raise ValueError(
-                    "El escaneo facial solo se permite durante una hora lectiva."
+                    "El registro facial solo está habilitado dentro de la hora lectiva programada."
                 )
-            inicio_periodo = _periodo_datetime(
-                fecha, periodo_actual["inicio"]
-            )
+            inicio_periodo = _periodo_datetime(fecha, periodo_actual["inicio"])
             if ahora > inicio_periodo + timedelta(minutes=10):
                 raise ValueError(
-                    "Ya pasaron los primeros 10 minutos de esta hora lectiva; "
-                    "el docente puede corregir la asistencia manualmente."
+                    "El escaneo facial solo está permitido durante los primeros 10 minutos de cada hora lectiva."
                 )
+            estado = "Presente"
             periodos_a_marcar = [periodo_actual]
         else:
             if periodo_indice is None:
@@ -957,24 +966,7 @@ def obtener_resumen_asistencia(materia_id=1, fecha=None):
             (materia_id, fecha, materia_id),
         ).fetchall()
 
-        for estudiante in estudiantes:
-            _migrar_asistencia_legacy(
-                cursor,
-                estudiante["id"],
-                materia_id,
-                fecha,
-                periodos,
-            )
-            _aplicar_ausencias_automaticas(
-                cursor,
-                estudiante["id"],
-                materia_id,
-                fecha,
-                periodos,
-                ahora,
-            )
-        conn.commit()
-
+        # Consultamos detalles una vez y aplicamos la regla de 10 minutos solo si falta algún período vencido.
         detalles = cursor.execute(
             """
             SELECT estudiante_id, periodo_indice, estado, hora, metodo_registro
@@ -988,6 +980,46 @@ def obtener_resumen_asistencia(materia_id=1, fecha=None):
             detalle_por_estudiante.setdefault(
                 detalle["estudiante_id"], {}
             )[detalle["periodo_indice"]] = detalle
+
+        periodos_vencidos = [
+            p for p in periodos
+            if ahora > _periodo_datetime(fecha, p["inicio"]) + timedelta(minutes=10)
+        ]
+        if periodos_vencidos:
+            cambios = False
+            for row in estudiantes:
+                detalle = detalle_por_estudiante.get(row["id"], {})
+                faltantes = [
+                    p for p in periodos_vencidos
+                    if p["indice"] not in detalle
+                    and not (
+                        p["indice"] in (1, 2)
+                        and row[f"hora_{p['indice']}_estado"]
+                        and row[f"hora_{p['indice']}_estado"] != "Pendiente"
+                    )
+                ]
+                if faltantes:
+                    cambios = (
+                        _aplicar_ausencias_automaticas(
+                            cursor, row["id"], materia_id, fecha, faltantes, ahora
+                        )
+                        or cambios
+                    )
+            if cambios:
+                conn.commit()
+                detalles = cursor.execute(
+                    """
+                    SELECT estudiante_id, periodo_indice, estado, hora, metodo_registro
+                    FROM asistencia_periodos
+                    WHERE materia_id = ? AND fecha = ?
+                    """,
+                    (materia_id, fecha),
+                ).fetchall()
+                detalle_por_estudiante = {}
+                for detalle in detalles:
+                    detalle_por_estudiante.setdefault(
+                        detalle["estudiante_id"], {}
+                    )[detalle["periodo_indice"]] = detalle
 
         registros = []
         for row in estudiantes:
@@ -1100,6 +1132,15 @@ def obtener_materias_docente(docente_id=1):
         ORDER BY id
         """, (docente_id,))
     materias = [dict(r) for r in cursor.fetchall()]
+    if not materias:
+        cursor.execute("""
+        SELECT id, codigo_materia, nombre_materia, docente_nombre, horario,
+               aula, periodo, nivel_paralelo
+        FROM materias
+        WHERE activo = 1
+        ORDER BY id
+        """)
+        materias = [dict(r) for r in cursor.fetchall()]
     for materia in materias:
         periodos = obtener_periodos_lectivos(
             materia["horario"], ahora.strftime("%Y-%m-%d")

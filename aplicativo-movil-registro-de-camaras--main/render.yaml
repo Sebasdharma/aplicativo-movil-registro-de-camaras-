@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: asistech-upec-backend
+    runtime: docker
+    rootDir: backend_vision
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: USE_SUPABASE
+        value: "true"
+      - key: ASISTECH_ENABLE_BG_WORKER
+        value: "1"
+      - key: TZ
+        value: America/Guayaquil
+      - key: SUPABASE_DB_URL
+        sync: false

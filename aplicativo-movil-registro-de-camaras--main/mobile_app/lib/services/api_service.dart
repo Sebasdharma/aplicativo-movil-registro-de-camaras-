@@ -7,9 +7,18 @@ class ApiService {
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   static final String baseUrl = _configuredBaseUrl.isNotEmpty
       ? _configuredBaseUrl
-      : defaultTargetPlatform == TargetPlatform.android
-          ? 'http://10.0.2.2:5000'
-          : 'http://127.0.0.1:5000';
+      : 'https://columbic-protectoral-wilbert.ngrok-free.dev';
+
+  static const Map<String, String> defaultHeaders = {
+    'ngrok-skip-browser-warning': 'true',
+    'User-Agent': 'AsisTech-Docente/1.0',
+  };
+
+  static Map<String, String> jsonHeaders([Map<String, String>? extra]) => {
+        ...defaultHeaders,
+        'Content-Type': 'application/json',
+        if (extra != null) ...extra,
+      };
 
   static Future<Docente> loginMicrosoft(String idToken) async {
     final http.Response response;
@@ -17,7 +26,7 @@ class ApiService {
       response = await http
           .post(
             Uri.parse('$baseUrl/api/auth/microsoft'),
-            headers: {'Content-Type': 'application/json'},
+            headers: jsonHeaders(),
             body: json.encode({'id_token': idToken}),
           )
           .timeout(const Duration(seconds: 10));
@@ -46,8 +55,11 @@ class ApiService {
     final http.Response res;
     try {
       res = await http
-          .post(Uri.parse('$baseUrl/api/auth/admin'))
-          .timeout(const Duration(seconds: 4));
+          .post(
+            Uri.parse('$baseUrl/api/auth/admin'),
+            headers: defaultHeaders,
+          )
+          .timeout(const Duration(seconds: 12));
     } catch (error) {
       throw Exception('No se pudo conectar con el servidor: $error');
     }
@@ -71,8 +83,11 @@ class ApiService {
   static Future<List<Materia>> getMaterias({int docenteId = 1}) async {
     try {
       final res = await http
-          .get(Uri.parse('$baseUrl/api/materias?docente_id=$docenteId'))
-          .timeout(const Duration(seconds: 4));
+          .get(
+            Uri.parse('$baseUrl/api/materias?docente_id=$docenteId'),
+            headers: defaultHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((m) => Materia.fromJson(m)).toList();
@@ -91,9 +106,11 @@ class ApiService {
       {int materiaId = 1}) async {
     try {
       final res = await http
-          .get(Uri.parse(
-              '$baseUrl/api/asistencia/resumen?materia_id=$materiaId'))
-          .timeout(const Duration(seconds: 4));
+          .get(
+            Uri.parse('$baseUrl/api/asistencia/resumen?materia_id=$materiaId'),
+            headers: defaultHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((e) => EstudianteAsistencia.fromJson(e)).toList();
@@ -121,7 +138,9 @@ class ApiService {
         'fecha': fechaFormateada,
       },
     );
-    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    final response = await http
+        .get(uri, headers: defaultHeaders)
+        .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       var mensaje = 'No se pudo generar el reporte '
           '(${response.statusCode}).';
@@ -154,7 +173,7 @@ class ApiService {
       response = await http
           .post(
             Uri.parse('$baseUrl/api/asistencia/manual'),
-            headers: {'Content-Type': 'application/json'},
+            headers: jsonHeaders(),
             body: json.encode({
               'estudiante_id': estudianteId,
               'materia_id': materiaId,
@@ -187,8 +206,11 @@ class ApiService {
   static Future<List<DispositivoIoT>> getDispositivosIoT() async {
     try {
       final res = await http
-          .get(Uri.parse('$baseUrl/api/dispositivos'))
-          .timeout(const Duration(seconds: 4));
+          .get(
+            Uri.parse('$baseUrl/api/dispositivos'),
+            headers: defaultHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((d) => DispositivoIoT.fromJson(d)).toList();
@@ -203,8 +225,11 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> getTabletCameras() async {
     final response = await http
-        .get(Uri.parse('$baseUrl/api/camara/tablet/dispositivos'))
-        .timeout(const Duration(seconds: 4));
+        .get(
+          Uri.parse('$baseUrl/api/camara/tablet/dispositivos'),
+          headers: defaultHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       throw Exception('No se pudieron consultar las tablets conectadas.');
     }
@@ -221,7 +246,7 @@ class ApiService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/camara/tablet/heartbeat'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'tablet_id': tabletId,
             'nombre': name,
@@ -229,7 +254,7 @@ class ApiService {
             'habilitada': enabled,
           }),
         )
-        .timeout(const Duration(seconds: 4));
+        .timeout(const Duration(seconds: 15));
     final Map<String, dynamic> result =
         json.decode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200 && result['status'] == 'ok') return result;
@@ -244,14 +269,14 @@ class ApiService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/camara/tablet/comando'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'tablet_id': tabletId,
             'action': action,
             'materia_id': materiaId,
           }),
         )
-        .timeout(const Duration(seconds: 4));
+        .timeout(const Duration(seconds: 15));
     final Map<String, dynamic> result =
         json.decode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200 && result['status'] == 'ok') return result;
@@ -264,23 +289,25 @@ class ApiService {
     final res = await http
         .post(
           Uri.parse('$baseUrl/api/camara/iniciar'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'materia_id': materiaId,
             'dispositivo_id': dispositivoId,
           }),
         )
-        .timeout(const Duration(seconds: 4));
+        .timeout(const Duration(seconds: 15));
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo iniciar la cámara.');
   }
 
   static Future<Map<String, dynamic>> detenerEscaneoCamara() async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/camara/detener'),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 5));
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/camara/detener'),
+          headers: jsonHeaders(),
+        )
+        .timeout(const Duration(seconds: 15));
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo detener la cámara.');
@@ -295,7 +322,7 @@ class ApiService {
     final res = await http
         .post(
           Uri.parse('$baseUrl/api/camara/telefono/escanear'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'foto': fotoBase64,
             'materia_id': materiaId,
@@ -314,7 +341,7 @@ class ApiService {
     final res = await http
         .post(
           Uri.parse('$baseUrl/api/carchito/comando'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'comando': comando,
             'materia_id': materiaId,
@@ -341,7 +368,7 @@ class ApiService {
     final res = await http
         .post(
           Uri.parse('$baseUrl/api/estudiantes/enrolar'),
-          headers: {'Content-Type': 'application/json'},
+          headers: jsonHeaders(),
           body: json.encode({
             'codigo': codigo,
             'nombre': nombre,

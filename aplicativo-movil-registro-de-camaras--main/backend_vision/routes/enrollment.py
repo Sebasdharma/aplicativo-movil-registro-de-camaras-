@@ -129,7 +129,11 @@ def api_enrolar():
                     ),
                 }), 409
 
+        # Inscribir al estudiante en la materia y en todas las materias activas del semestre
         inscribir_estudiante_en_materia(cursor, estudiante_id, materia_id)
+        for row in cursor.execute("SELECT id FROM materias WHERE activo = 1").fetchall():
+            inscribir_estudiante_en_materia(cursor, estudiante_id, row["id"])
+
         for image_bytes in images:
             foto_filename = f"{codigo}-{uuid.uuid4().hex}.jpg"
             foto_path = os.path.join(face_engine.dataset_dir, foto_filename)
@@ -138,10 +142,19 @@ def api_enrolar():
             saved_photo_paths.append(foto_path)
             cursor.execute(
                 """
-                INSERT INTO fotos_faciales_estudiantes (estudiante_id, foto_path)
-                VALUES (?, ?)
+                INSERT INTO fotos_faciales_estudiantes (estudiante_id, foto_path, imagen_bytes)
+                VALUES (?, ?, ?)
                 """,
-                (estudiante_id, foto_filename),
+                (estudiante_id, foto_filename, image_bytes),
+            )
+            # Asegurar foto principal en tabla estudiantes si no tiene
+            cursor.execute(
+                """
+                UPDATE estudiantes
+                SET foto_path = ?
+                WHERE id = ? AND (foto_path IS NULL OR foto_path = '')
+                """,
+                (foto_filename, estudiante_id),
             )
         conn.commit()
         face_engine.cargar_dataset_fotos()

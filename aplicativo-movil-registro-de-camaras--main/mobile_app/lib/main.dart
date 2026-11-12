@@ -110,6 +110,9 @@ class _LocalCertificateHttpOverrides extends HttpOverrides {
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(_securityContext)
       ..badCertificateCallback = (certificate, host, port) {
+        if (host.contains('ngrok')) {
+          return true;
+        }
         return _apiUri.scheme == 'https' &&
             host == _apiUri.host &&
             port == _apiUri.port &&

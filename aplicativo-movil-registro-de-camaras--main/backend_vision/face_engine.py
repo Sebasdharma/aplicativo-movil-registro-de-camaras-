@@ -10,10 +10,10 @@ from database import get_db, registrar_asistencia_db
 
 
 class FaceEngine:
-    RECOGNITION_THRESHOLD = 0.363
-    MIN_RECOGNITION_MARGIN = 0.08
-    REQUIRED_CONSECUTIVE_MATCHES = 3
-    MATCH_CONFIRMATION_WINDOW_SECONDS = 4
+    RECOGNITION_THRESHOLD = 0.32
+    MIN_RECOGNITION_MARGIN = 0.05
+    REQUIRED_CONSECUTIVE_MATCHES = 1
+    MATCH_CONFIRMATION_WINDOW_SECONDS = 5
 
     def __init__(self):
         models_dir = os.path.join(
@@ -31,7 +31,7 @@ class FaceEngine:
                     f"Falta el modelo facial requerido: {model_path}"
                 )
         self.face_detector = cv2.FaceDetectorYN_create(
-            detector_path, "", (320, 320), 0.7, 0.3, 5000
+            detector_path, "", (320, 320), 0.5, 0.3, 5000
         )
         self.face_recognizer = cv2.FaceRecognizerSF_create(recognizer_path, "")
         self._model_lock = threading.Lock()
@@ -64,16 +64,66 @@ class FaceEngine:
             return False, "La foto debe mostrar exactamente un rostro."
         return True, ""
 
+    @staticmethod
+    def _normalizar_iluminacion(image):
+        """
+        Normaliza variaciones de luz (poca luz, sombras intensas, contraluz)
+        usando CLAHE sobre el canal de luminosidad (L) en espacio LAB.
+        """
+        if image is None or image.size == 0:
+            return image
+        try:
+            lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            merged = cv2.merge((cl, a, b))
+            return cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+        except Exception:
+            return image
+
+    @staticmethod
+    def _limitar_resolucion(image, max_dim=720):
+        if image is None or image.size == 0:
+            return image
+        height, width = image.shape[:2]
+        largest = max(height, width)
+        if largest <= max_dim:
+            return image
+        scale = max_dim / float(largest)
+        return cv2.resize(
+            image,
+            (max(1, int(round(width * scale))), max(1, int(round(height * scale)))),
+            interpolation=cv2.INTER_AREA,
+        )
+
     def _decode_image(self, image_bytes):
         image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         if image is None or image.size == 0:
             return None
-        return image
+        return self._limitar_resolucion(image)
 
     def _face_sample(self, image, detection):
         with self._model_lock:
             aligned = self.face_recognizer.alignCrop(image, detection)
-            embedding = self.face_recognizer.feature(aligned).reshape(-1)
+            embedding_raw = self.face_recognizer.feature(aligned).reshape(-1)
+            norm_raw = np.linalg.norm(embedding_raw)
+            if norm_raw > 0 and np.isfinite(norm_raw):
+                embedding_raw = embedding_raw / norm_raw
+
+            aligned_flip = cv2.flip(aligned, 1)
+            embedding_flip = self.face_recognizer.feature(aligned_flip).reshape(-1)
+            norm_flip = np.linalg.norm(embedding_flip)
+            if norm_flip > 0 and np.isfinite(norm_flip):
+                embedding_flip = embedding_flip / norm_flip
+
+            aligned_norm = self._normalizar_iluminacion(aligned)
+            embedding_norm = self.face_recognizer.feature(aligned_norm).reshape(-1)
+            norm_norm = np.linalg.norm(embedding_norm)
+            if norm_norm > 0 and np.isfinite(norm_norm):
+                embedding_norm = embedding_norm / norm_norm
+
+        embedding = 0.4 * embedding_raw + 0.3 * embedding_flip + 0.3 * embedding_norm
         norm = np.linalg.norm(embedding)
         if not np.isfinite(norm) or norm == 0:
             raise ValueError("No se pudo calcular la representación facial.")
@@ -179,6 +229,40 @@ class FaceEngine:
                 ORDER BY e.id, f.id
                 """
             ).fetchall()
+
+            missing_names = set()
+            for estudiante in estudiantes:
+                for fn in (estudiante["foto_legacy"], estudiante["foto_adicional"]):
+                    if fn:
+                        safe_name = os.path.basename(fn)
+                        if safe_name and not os.path.isfile(os.path.join(self.dataset_dir, safe_name)):
+                            missing_names.add(safe_name)
+
+            if missing_names:
+                placeholders = ",".join("?" for _ in missing_names)
+                try:
+                    rows_bin = conn.execute(
+                        f"""
+                        SELECT foto_path, imagen_bytes
+                        FROM fotos_faciales_estudiantes
+                        WHERE imagen_bytes IS NOT NULL
+                          AND foto_path IN ({placeholders})
+                        """,
+                        tuple(sorted(missing_names)),
+                    ).fetchall()
+                except Exception:
+                    rows_bin = []
+                if rows_bin:
+                    os.makedirs(self.dataset_dir, exist_ok=True)
+                for row_bin in rows_bin:
+                    raw = row_bin["imagen_bytes"]
+                    if not raw:
+                        continue
+                    safe_name = os.path.basename(row_bin["foto_path"])
+                    target_path = os.path.join(self.dataset_dir, safe_name)
+                    if not os.path.isfile(target_path):
+                        with open(target_path, "wb") as out_file:
+                            out_file.write(bytes(raw))
         finally:
             conn.close()
 
@@ -221,6 +305,7 @@ class FaceEngine:
                         f"{estudiante['codigo_estudiantil']}."
                     )
                     continue
+                image = self._limitar_resolucion(image)
                 faces = self._detect_faces(image)
                 if len(faces) != 1:
                     print(
@@ -249,6 +334,22 @@ class FaceEngine:
             f"disponibles con {sum(map(len, samples_by_student.values()))} fotos."
         )
 
+    @staticmethod
+    def _is_face_upright(bounds):
+        try:
+            if len(bounds) < 14:
+                return True
+        except TypeError:
+            return True
+        right_eye_x, right_eye_y = float(bounds[4]), float(bounds[5])
+        left_eye_x, left_eye_y = float(bounds[6]), float(bounds[7])
+        right_mouth_y, left_mouth_y = float(bounds[11]), float(bounds[13])
+        eye_y = 0.5 * (right_eye_y + left_eye_y)
+        mouth_y = 0.5 * (right_mouth_y + left_mouth_y)
+        dx_eyes = abs(right_eye_x - left_eye_x)
+        dy_eyes = abs(right_eye_y - left_eye_y)
+        return eye_y < mouth_y and dx_eyes >= dy_eyes * 0.8
+
     def reconocer_imagen(
         self, image_bytes, materia_id, rotacion=0, session_key="default"
     ):
@@ -263,6 +364,49 @@ class FaceEngine:
             image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
         faces = self._detect_faces(image)
+        needs_orientation_search = (
+            len(faces) == 0
+            or (len(faces) == 1 and not self._is_face_upright(faces[0]))
+        )
+        if needs_orientation_search:
+            best_image, best_faces = None, None
+            candidates = [image]
+            if len(faces) == 0:
+                candidates.append(self._normalizar_iluminacion(image))
+            for base_img in candidates:
+                for flag in (
+                    None,
+                    cv2.ROTATE_180,
+                    cv2.ROTATE_90_CLOCKWISE,
+                    cv2.ROTATE_90_COUNTERCLOCKWISE,
+                ):
+                    cand = base_img if flag is None else cv2.rotate(base_img, flag)
+                    cand_faces = self._detect_faces(cand)
+                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
+                        best_image, best_faces = cand, cand_faces
+                        break
+                    if best_faces is None and len(cand_faces) > 0:
+                        best_image, best_faces = cand, cand_faces
+                if best_faces is not None and len(best_faces) == 1 and self._is_face_upright(best_faces[0]):
+                    break
+            if best_faces is None:
+                flipped = cv2.flip(image, 1)
+                for flag in (
+                    None,
+                    cv2.ROTATE_180,
+                    cv2.ROTATE_90_CLOCKWISE,
+                    cv2.ROTATE_90_COUNTERCLOCKWISE,
+                ):
+                    cand = flipped if flag is None else cv2.rotate(flipped, flag)
+                    cand_faces = self._detect_faces(cand)
+                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
+                        best_image, best_faces = cand, cand_faces
+                        break
+                    if best_faces is None and len(cand_faces) > 0:
+                        best_image, best_faces = cand, cand_faces
+            if best_faces is not None:
+                image, faces = best_image, best_faces
+
         if len(faces) == 0:
             self._reset_pending_identity(session_key)
             return {
@@ -299,12 +443,40 @@ class FaceEngine:
             sample = self._face_sample(image, bounds)
             label, confidence, margin = self._predict_face(sample)
             estudiante = self.label_to_student.get(label)
-            if (
-                estudiante is None
-                or estudiante["id"] not in inscritos
-                or not self._is_confident_match(confidence, margin)
-            ):
-                self._reset_pending_identity(session_key)
+            is_match = (
+                estudiante is not None
+                and estudiante["id"] in inscritos
+                and self._is_confident_match(confidence, margin)
+            )
+            if not is_match:
+                retry_candidates = (
+                    self._normalizar_iluminacion(image),
+                    cv2.rotate(image, cv2.ROTATE_180),
+                    cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
+                    cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE),
+                    cv2.rotate(self._normalizar_iluminacion(image), cv2.ROTATE_180),
+                )
+                for cand_img in retry_candidates:
+                    cand_faces = self._detect_faces(cand_img)
+                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
+                        cand_sample = self._face_sample(cand_img, cand_faces[0])
+                        c_label, c_conf, c_margin = self._predict_face(cand_sample)
+                        c_est = self.label_to_student.get(c_label)
+                        if (
+                            c_est is not None
+                            and c_est["id"] in inscritos
+                            and self._is_confident_match(c_conf, c_margin)
+                        ):
+                            label, confidence, margin = c_label, c_conf, c_margin
+                            estudiante = c_est
+                            is_match = True
+                            break
+            print(
+                f"[FACE SCAN] Match={is_match} | conf={confidence:.3f} | margin={margin:.3f} | "
+                f"estudiante={estudiante['nombre_completo'] if estudiante else 'Desconocido'}",
+                flush=True,
+            )
+            if not is_match:
                 resultados.append({
                     "estado": "desconocido",
                     "confianza": round(float(confidence * 100), 1),
@@ -314,9 +486,14 @@ class FaceEngine:
 
             student_id = estudiante["id"]
             if not self._confirm_identity(student_id, session_key):
+                pending_info = self._pending_identities.get(session_key, (student_id, 1, 0))
                 resultados.append({
                     "estado": "verificando",
+                    "nombre": estudiante["nombre_completo"],
+                    "codigo": estudiante["codigo_estudiantil"],
                     "confianza": round(float(confidence * 100), 1),
+                    "confirmaciones": pending_info[1],
+                    "requeridas": self.REQUIRED_CONSECUTIVE_MATCHES,
                 })
                 continue
 

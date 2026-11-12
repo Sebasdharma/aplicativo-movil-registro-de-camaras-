@@ -211,6 +211,40 @@ class FaceEnrollmentTests(unittest.TestCase):
         conn.close()
         self.assertEqual(student_count, 0)
 
+    def test_enrollment_restores_missing_dataset_files_from_database_bytes(self):
+        response = self._enroll("TEST-HYDRATE-001", [self.photo])
+        self.assertEqual(response.status_code, 200, response.json)
+
+        saved_files = [
+            f for f in os.listdir(self.dataset_dir)
+            if f.startswith("TEST-HYDRATE-001-")
+        ]
+        self.assertEqual(len(saved_files), 1)
+        os.remove(os.path.join(self.dataset_dir, saved_files[0]))
+        self.assertFalse(os.path.exists(os.path.join(self.dataset_dir, saved_files[0])))
+
+        engine = FaceEngine.__new__(FaceEngine)
+        engine.dataset_dir = self.dataset_dir
+        engine._pending_identities = {}
+        engine.student_embeddings = {}
+        engine.label_to_student = {}
+        sample = np.asarray([1.0, 0.0], dtype=np.float32)
+        with (
+            patch.object(engine, "_detect_faces", return_value=[(0, 0, 120, 120)]),
+            patch.object(engine, "_face_sample", return_value=sample),
+        ):
+            engine.cargar_dataset_fotos()
+
+        self.assertTrue(os.path.isfile(os.path.join(self.dataset_dir, saved_files[0])))
+        self.assertEqual(len(engine.student_embeddings), 1)
+
+    def test_health_endpoint_returns_ok(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("hora_servidor", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

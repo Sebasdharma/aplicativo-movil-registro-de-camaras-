@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.bak
+data/
+dataset_estudiantes/
+certs/
+.env
+.pytest_cache/
+test_*.py
+migrar_sqlite_a_supabase.py
+enroll_student.py
+generate_local_cert.py
