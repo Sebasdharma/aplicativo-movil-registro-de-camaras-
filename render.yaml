@@ -2,7 +2,7 @@ services:
   - type: web
     name: asistech-upec-backend
     runtime: docker
-    rootDir: backend_vision
+    rootDir: aplicativo-movil-registro-de-camaras--main/backend_vision
     plan: free
     healthCheckPath: /health
     envVars:
