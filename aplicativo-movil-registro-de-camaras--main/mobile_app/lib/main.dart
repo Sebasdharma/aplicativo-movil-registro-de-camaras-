@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -22,6 +23,7 @@ const _localServerCertificateAsset =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _configureLocalHttpCertificateTrust();
+  unawaited(ApiService.despertarServidor());
   var initialThemeMode = ThemeMode.light;
   var initialPrivacyAccepted = false;
   try {

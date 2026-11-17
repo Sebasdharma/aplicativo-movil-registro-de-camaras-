@@ -12,7 +12,6 @@ import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
-import android.net.SSLCertificateSocketFactory;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -35,27 +34,25 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.conscrypt.Conscrypt;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.Socket;
-import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.net.UnknownHostException;
+import java.security.Provider;
 import java.security.SecureRandom;
+import java.security.Security;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
-import javax.net.ssl.HttpsURLConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.util.Date;
@@ -64,7 +61,19 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import okhttp3.ConnectionSpec;
+import okhttp3.Dns;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import okhttp3.TlsVersion;
 
 @SuppressWarnings("deprecation")
 public final class MainActivity extends Activity implements SurfaceHolder.Callback {
@@ -72,6 +81,10 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         System.setProperty("java.net.preferIPv4Stack", "true");
         System.setProperty("java.net.preferIPv6Addresses", "false");
         System.setProperty("http.keepAlive", "false");
+        try {
+            Security.insertProviderAt(Conscrypt.newProvider(), 1);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static final String PREFS = "asistech_j2_camera";
@@ -127,10 +140,14 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     private int previewHeight = 480;
     private long framesSentCount = 0;
     private boolean surfaceReady = false;
+    private static final MediaType JSON_MEDIA_TYPE =
+            MediaType.parse("application/json; charset=utf-8");
     private String effectiveServerUrl;
     private volatile String cachedIpv4Host;
     private volatile String cachedIpv4Addr;
     private volatile long cachedIpv4At;
+    private OkHttpClient httpClient;
+    private OkHttpClient dohHttpClient;
     private boolean isShowingSuccess = false;
 
     private final Runnable heartbeatLoop = new Runnable() {
@@ -154,7 +171,8 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 || savedUrl.contains("192.168.")
                 || savedUrl.contains("172.20.")
                 || savedUrl.contains("10.0.")
-                || savedUrl.contains("localhost")) {
+                || savedUrl.contains("localhost")
+                || savedUrl.contains("ngrok")) {
             effectiveServerUrl = defaultUrl;
             preferences.edit().putString(KEY_SERVER_URL, effectiveServerUrl).apply();
         } else {
@@ -1093,63 +1111,124 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         lastResultKey = key;
     }
 
-    private String resolveIpv4(String host) {
-        if (host == null || host.isEmpty()) {
-            return host;
+    private synchronized OkHttpClient getDohHttpClient() {
+        if (dohHttpClient == null) {
+            dohHttpClient = buildOkHttpClientBuilder(5, 5, 5).build();
         }
-        if (host.matches("^\\d{1,3}(\\.\\d{1,3}){3}$")) {
-            return host;
-        }
-        long now = SystemClock.elapsedRealtime();
-        if (host.equals(cachedIpv4Host) && cachedIpv4Addr != null && (now - cachedIpv4At) < 300_000L) {
-            return cachedIpv4Addr;
-        }
-        String found = null;
-        try {
-            InetAddress[] addresses = InetAddress.getAllByName(host);
-            for (InetAddress addr : addresses) {
-                if (addr instanceof Inet4Address) {
-                    found = addr.getHostAddress();
-                    break;
+        return dohHttpClient;
+    }
+
+    private synchronized OkHttpClient getHttpClient() {
+        if (httpClient == null) {
+            Dns ipv4FirstDns = hostname -> {
+                if (hostname == null || hostname.isEmpty()) {
+                    throw new UnknownHostException("Hostname vacío");
                 }
+                if (hostname.matches("^\\d{1,3}(\\.\\d{1,3}){3}$")) {
+                    return Arrays.asList(InetAddress.getAllByName(hostname));
+                }
+                try {
+                    InetAddress[] systemAddrs = InetAddress.getAllByName(hostname);
+                    List<InetAddress> ipv4 = new ArrayList<>();
+                    for (InetAddress addr : systemAddrs) {
+                        if (addr instanceof Inet4Address) {
+                            ipv4.add(addr);
+                        }
+                    }
+                    if (!ipv4.isEmpty()) {
+                        return ipv4;
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                long now = SystemClock.elapsedRealtime();
+                String ip = null;
+                if (hostname.equals(cachedIpv4Host)
+                        && cachedIpv4Addr != null
+                        && (now - cachedIpv4At) < 300_000L) {
+                    ip = cachedIpv4Addr;
+                }
+                if (ip == null) {
+                    ip = resolveIpv4ViaDoH(hostname);
+                    if (ip != null) {
+                        cachedIpv4Host = hostname;
+                        cachedIpv4Addr = ip;
+                        cachedIpv4At = now;
+                    }
+                }
+                if (ip != null) {
+                    return Arrays.asList(InetAddress.getAllByName(ip));
+                }
+                throw new UnknownHostException("No se pudo resolver IPv4 para " + hostname);
+            };
+            httpClient = buildOkHttpClientBuilder(10, 25, 15)
+                    .dns(ipv4FirstDns)
+                    .build();
+        }
+        return httpClient;
+    }
+
+    private OkHttpClient.Builder buildOkHttpClientBuilder(
+            int connectTimeoutSec, int readTimeoutSec, int writeTimeoutSec) {
+        ConnectionSpec modernTls = new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+                .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
+                .allEnabledCipherSuites()
+                .build();
+
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .connectTimeout(connectTimeoutSec, TimeUnit.SECONDS)
+                .readTimeout(readTimeoutSec, TimeUnit.SECONDS)
+                .writeTimeout(writeTimeoutSec, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .protocols(Collections.singletonList(Protocol.HTTP_1_1))
+                .connectionSpecs(Arrays.asList(modernTls, ConnectionSpec.CLEARTEXT));
+
+        try {
+            X509TrustManager trustManager = new X509TrustManager() {
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                }
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                }
+
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+            };
+            SSLContext sslContext;
+            try {
+                Provider conscrypt = Conscrypt.newProvider();
+                sslContext = SSLContext.getInstance("TLS", conscrypt);
+            } catch (Throwable ignored) {
+                sslContext = SSLContext.getInstance("TLSv1.2");
             }
+            sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+            builder.sslSocketFactory(sslContext.getSocketFactory(), trustManager);
+            builder.hostnameVerifier((hostname, session) -> true);
         } catch (Throwable ignored) {
         }
-        if (found == null) {
-            found = resolveIpv4ViaDoH(host);
-        }
-        if (found != null) {
-            cachedIpv4Host = host;
-            cachedIpv4Addr = found;
-            cachedIpv4At = now;
-            return found;
-        }
-        return host;
+        return builder;
     }
 
     private String resolveIpv4ViaDoH(String host) {
-        HttpURLConnection conn = null;
         try {
-            URL url = new URL("https://8.8.8.8/resolve?name="
-                    + URLEncoder.encode(host, "UTF-8") + "&type=A");
-            conn = (HttpURLConnection) url.openConnection();
-            if (conn instanceof HttpsURLConnection) {
-                configureTrustAllSsl((HttpsURLConnection) conn, "dns.google");
-            }
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            conn.setRequestProperty("Accept", "application/dns-json");
-            conn.setRequestProperty("Connection", "close");
-            if (conn.getResponseCode() == 200) {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buf = new byte[2048];
-                int n;
-                try (InputStream in = conn.getInputStream()) {
-                    while ((n = in.read(buf)) != -1) {
-                        out.write(buf, 0, n);
-                    }
+            String url = "https://8.8.8.8/resolve?name="
+                    + URLEncoder.encode(host, "UTF-8") + "&type=A";
+            Request request = new Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/dns-json")
+                    .header("Host", "dns.google")
+                    .get()
+                    .build();
+            try (Response response = getDohHttpClient().newCall(request).execute()) {
+                ResponseBody body = response.body();
+                if (!response.isSuccessful() || body == null) {
+                    return null;
                 }
-                JSONObject json = new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8));
+                JSONObject json = new JSONObject(body.string());
                 JSONArray answers = json.optJSONArray("Answer");
                 if (answers != null) {
                     for (int i = 0; i < answers.length(); i++) {
@@ -1164,129 +1243,30 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 }
             }
         } catch (Throwable ignored) {
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
         }
         return null;
     }
 
     private JSONObject postJson(String path, JSONObject payload) throws Exception {
-        HttpURLConnection connection = null;
         try {
-            URL originalUrl = new URL(effectiveServerUrl + path);
-            String originalHost = originalUrl.getHost();
-            String targetHost = resolveIpv4(originalHost);
-            int port = originalUrl.getPort();
-            URL connectUrl = (port != -1)
-                    ? new URL(originalUrl.getProtocol(), targetHost, port, originalUrl.getFile())
-                    : new URL(originalUrl.getProtocol(), targetHost, originalUrl.getFile());
-
-            connection = (HttpURLConnection) connectUrl.openConnection();
-            if (connection instanceof HttpsURLConnection) {
-                configureTrustAllSsl((HttpsURLConnection) connection, originalHost);
-            }
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(12000);
-            connection.setDoOutput(true);
-            String hostHeader = (port != -1 && port != 80 && port != 443)
-                    ? (originalHost + ":" + port) : originalHost;
-            connection.setRequestProperty("Host", hostHeader);
-            connection.setRequestProperty("Connection", "close");
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("User-Agent", "AsisTech-J2/1.0");
-            connection.setRequestProperty("ngrok-skip-browser-warning", "true");
-
-            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(body.length);
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(body);
-            }
-
-            int status = connection.getResponseCode();
-            InputStream stream = (status >= 200 && status < 300)
-                    ? connection.getInputStream() : connection.getErrorStream();
-
-            ByteArrayOutputStream responseBytes = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int read;
-            if (stream != null) {
-                try (InputStream input = stream) {
-                    while ((read = input.read(buffer)) != -1) {
-                        responseBytes.write(buffer, 0, read);
-                    }
+            RequestBody body = RequestBody.create(JSON_MEDIA_TYPE, payload.toString());
+            Request request = new Request.Builder()
+                    .url(effectiveServerUrl + path)
+                    .header("User-Agent", "AsisTech-J2/1.0")
+                    .header("ngrok-skip-browser-warning", "true")
+                    .post(body)
+                    .build();
+            try (Response response = getHttpClient().newCall(request).execute()) {
+                ResponseBody responseBody = response.body();
+                String text = responseBody != null ? responseBody.string() : "";
+                if (!response.isSuccessful()) {
+                    throw new IOException("HTTP " + response.code());
                 }
+                return new JSONObject(text);
             }
-            if (status < 200 || status >= 300) {
-                throw new IOException("HTTP " + status);
-            }
-            return new JSONObject(new String(responseBytes.toByteArray(), StandardCharsets.UTF_8));
         } catch (Exception error) {
             cachedIpv4Addr = null;
             throw error;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    private static void configureTrustAllSsl(HttpsURLConnection conn, final String sniHost) {
-        try {
-            final SSLCertificateSocketFactory ssf =
-                    (SSLCertificateSocketFactory) SSLCertificateSocketFactory.getInsecure(12000, null);
-            conn.setSSLSocketFactory(new SSLSocketFactory() {
-                private Socket configureSocket(Socket socket) {
-                    if (socket instanceof SSLSocket) {
-                        SSLSocket ssl = (SSLSocket) socket;
-                        try {
-                            ssf.setHostname(ssl, sniHost);
-                        } catch (Throwable ignored) {
-                        }
-                        try {
-                            ssl.setEnabledProtocols(new String[]{"TLSv1.2", "TLSv1.1", "TLSv1"});
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    return socket;
-                }
-                @Override
-                public String[] getDefaultCipherSuites() {
-                    return ssf.getDefaultCipherSuites();
-                }
-                @Override
-                public String[] getSupportedCipherSuites() {
-                    return ssf.getSupportedCipherSuites();
-                }
-                @Override
-                public Socket createSocket() throws IOException {
-                    return configureSocket(ssf.createSocket());
-                }
-                @Override
-                public Socket createSocket(Socket s, String host, int port, boolean autoClose) throws IOException {
-                    return configureSocket(ssf.createSocket(s, sniHost, port, autoClose));
-                }
-                @Override
-                public Socket createSocket(String host, int port) throws IOException {
-                    return configureSocket(ssf.createSocket(host, port));
-                }
-                @Override
-                public Socket createSocket(String host, int port, InetAddress localHost, int localPort) throws IOException {
-                    return configureSocket(ssf.createSocket(host, port, localHost, localPort));
-                }
-                @Override
-                public Socket createSocket(InetAddress host, int port) throws IOException {
-                    return configureSocket(ssf.createSocket(host, port));
-                }
-                @Override
-                public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
-                    return configureSocket(ssf.createSocket(address, port, localAddress, localPort));
-                }
-            });
-            conn.setHostnameVerifier((hostname, session) -> true);
-        } catch (Throwable ignored) {
         }
     }
 

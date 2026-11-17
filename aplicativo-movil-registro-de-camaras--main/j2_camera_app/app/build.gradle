@@ -2,7 +2,7 @@ plugins {
     id "com.android.application"
 }
 
-def apiBaseUrl = (project.findProperty("cameraApiBaseUrl") ?: "https://columbic-protectoral-wilbert.ngrok-free.dev")
+def apiBaseUrl = (project.findProperty("cameraApiBaseUrl") ?: "https://asistech-upec-backend.onrender.com")
         .toString()
         .replaceAll("/+\$", "")
 
@@ -14,8 +14,8 @@ android {
         applicationId "com.upec.asistech.j2camera"
         minSdk 22
         targetSdk 28
-        versionCode 8
-        versionName "1.0.8"
+        versionCode 10
+        versionName "1.0.10"
         buildConfigField "String", "API_BASE_URL", "\"${apiBaseUrl}\""
     }
 
@@ -37,4 +37,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation "com.squareup.okhttp3:okhttp:3.12.13"
+    implementation "org.conscrypt:conscrypt-android:2.9.0"
 }

@@ -7,10 +7,12 @@ class ApiService {
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   static final String baseUrl = _configuredBaseUrl.isNotEmpty
       ? _configuredBaseUrl
-      : 'https://columbic-protectoral-wilbert.ngrok-free.dev';
+      : 'https://asistech-upec-backend.onrender.com';
+
+  static const Duration _coldStartTimeout = Duration(seconds: 65);
+  static const Duration _actionTimeout = Duration(seconds: 30);
 
   static const Map<String, String> defaultHeaders = {
-    'ngrok-skip-browser-warning': 'true',
     'User-Agent': 'AsisTech-Docente/1.0',
   };
 
@@ -19,6 +21,16 @@ class ApiService {
         'Content-Type': 'application/json',
         if (extra != null) ...extra,
       };
+
+  static Future<void> despertarServidor() async {
+    try {
+      await http
+          .get(Uri.parse('$baseUrl/health'), headers: defaultHeaders)
+          .timeout(_coldStartTimeout);
+    } catch (_) {
+      // Silencioso: solo busca despertar el contenedor en la nube al abrir la app.
+    }
+  }
 
   static Future<Docente> loginMicrosoft(String idToken) async {
     final http.Response response;
@@ -29,7 +41,7 @@ class ApiService {
             headers: jsonHeaders(),
             body: json.encode({'id_token': idToken}),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(_coldStartTimeout);
     } catch (error) {
       throw Exception('No se pudo verificar la cuenta con el servidor: $error');
     }
@@ -59,7 +71,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/auth/admin'),
             headers: defaultHeaders,
           )
-          .timeout(const Duration(seconds: 12));
+          .timeout(_coldStartTimeout);
     } catch (error) {
       throw Exception('No se pudo conectar con el servidor: $error');
     }
@@ -87,7 +99,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/materias?docente_id=$docenteId'),
             headers: defaultHeaders,
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_coldStartTimeout);
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((m) => Materia.fromJson(m)).toList();
@@ -110,7 +122,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/asistencia/resumen?materia_id=$materiaId'),
             headers: defaultHeaders,
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_coldStartTimeout);
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((e) => EstudianteAsistencia.fromJson(e)).toList();
@@ -182,7 +194,7 @@ class ApiService {
               'periodo_indice': periodoIndice,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_actionTimeout);
     } catch (error) {
       throw Exception('No se pudo conectar con el servidor: $error');
     }
@@ -210,7 +222,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/dispositivos'),
             headers: defaultHeaders,
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_actionTimeout);
       if (res.statusCode == 200) {
         final List<dynamic> list = json.decode(res.body);
         return list.map((d) => DispositivoIoT.fromJson(d)).toList();
@@ -229,7 +241,7 @@ class ApiService {
           Uri.parse('$baseUrl/api/camara/tablet/dispositivos'),
           headers: defaultHeaders,
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     if (response.statusCode != 200) {
       throw Exception('No se pudieron consultar las tablets conectadas.');
     }
@@ -254,7 +266,7 @@ class ApiService {
             'habilitada': enabled,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result =
         json.decode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200 && result['status'] == 'ok') return result;
@@ -276,7 +288,7 @@ class ApiService {
             'materia_id': materiaId,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result =
         json.decode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200 && result['status'] == 'ok') return result;
@@ -295,7 +307,7 @@ class ApiService {
             'dispositivo_id': dispositivoId,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo iniciar la cámara.');
@@ -307,7 +319,7 @@ class ApiService {
           Uri.parse('$baseUrl/api/camara/detener'),
           headers: jsonHeaders(),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo detener la cámara.');
@@ -329,7 +341,7 @@ class ApiService {
             'rotacion': rotacion,
           }),
         )
-        .timeout(const Duration(seconds: 20));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo escanear la imagen.');
@@ -347,7 +359,7 @@ class ApiService {
             'materia_id': materiaId,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200) return result;
     throw Exception(
@@ -382,7 +394,7 @@ class ApiService {
             'consentimiento_biometrico': consentimientoBiometrico,
           }),
         )
-        .timeout(const Duration(seconds: 20));
+        .timeout(_actionTimeout);
     final Map<String, dynamic> result = json.decode(res.body);
     if (res.statusCode == 200 && result['status'] == 'ok') return result;
     throw Exception(result['mensaje'] ?? 'No se pudo enrolar al estudiante.');
