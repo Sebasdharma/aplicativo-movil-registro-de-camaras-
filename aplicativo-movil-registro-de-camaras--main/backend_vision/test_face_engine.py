@@ -22,10 +22,27 @@ class FaceEngineTests(unittest.TestCase):
         self.assertAlmostEqual(margin, 0.2)
 
     def test_recognition_requires_a_clear_margin_between_students(self):
-        self.assertFalse(FaceEngine._is_confident_match(0.29, 0.13))
+        self.assertFalse(FaceEngine._is_confident_match(0.40, 0.15))
         self.assertFalse(FaceEngine._is_confident_match(0.8, 0.03))
-        self.assertTrue(FaceEngine._is_confident_match(0.32, 0.05))
-        self.assertTrue(FaceEngine._is_confident_match(0.8, 0.1))
+        self.assertTrue(FaceEngine._is_confident_match(0.52, 0.10))
+        self.assertTrue(FaceEngine._is_confident_match(0.8, 0.15))
+
+    def test_predict_face_uses_multi_template_matching_when_available(self):
+        engine = FaceEngine.__new__(FaceEngine)
+        engine.student_embeddings = {
+            1: np.asarray([0.7, 0.7], dtype=np.float32),
+        }
+        engine.student_templates = {
+            1: [
+                np.asarray([1.0, 0.0], dtype=np.float32),
+                np.asarray([0.0, 1.0], dtype=np.float32),
+            ],
+        }
+        label, conf, margin = engine._predict_face(
+            np.asarray([1.0, 0.0], dtype=np.float32)
+        )
+        self.assertEqual(label, 1)
+        self.assertAlmostEqual(conf, 0.94, places=2)
 
     def test_identity_confirms_immediately_with_single_confident_frame(self):
         engine = FaceEngine.__new__(FaceEngine)

@@ -10,8 +10,12 @@ from database import get_db, registrar_asistencia_db
 
 
 class FaceEngine:
-    RECOGNITION_THRESHOLD = 0.32
-    MIN_RECOGNITION_MARGIN = 0.05
+    RECOGNITION_THRESHOLD = float(
+        os.environ.get("ASISTECH_RECOGNITION_THRESHOLD", "0.52")
+    )
+    MIN_RECOGNITION_MARGIN = float(
+        os.environ.get("ASISTECH_MIN_MARGIN", "0.10")
+    )
     REQUIRED_CONSECUTIVE_MATCHES = 1
     MATCH_CONFIRMATION_WINDOW_SECONDS = 5
 
@@ -42,6 +46,7 @@ class FaceEngine:
         self.ultimo_registro = {}
         self._pending_identities = {}
         self._camera_stop_event = threading.Event()
+        self.student_templates = {}
         self.student_embeddings = {}
         self.label_to_student = {}
         self.cargar_dataset_fotos()
@@ -130,13 +135,20 @@ class FaceEngine:
         return embedding / norm
 
     def _predict_face(self, sample):
-        ranked = sorted(
-            (
-                (float(np.dot(sample, centroid)), label)
-                for label, centroid in self.student_embeddings.items()
-            ),
-            reverse=True,
-        )
+        scores = []
+        for label, centroid in self.student_embeddings.items():
+            templates = getattr(self, "student_templates", {}).get(label)
+            if templates:
+                # Multi-plantilla k-NN bancario: mejor coincidencia entre poses enroladas
+                max_sim = max(float(np.dot(sample, t)) for t in templates)
+                centroid_sim = float(np.dot(sample, centroid))
+                # Ponderación: 80% mejor pose/expresión específica + 20% estabilidad de centroide
+                score = 0.8 * max_sim + 0.2 * centroid_sim
+            else:
+                score = float(np.dot(sample, centroid))
+            scores.append((score, label))
+
+        ranked = sorted(scores, reverse=True)
         if not ranked:
             return None, -1.0, 0.0
 
@@ -214,6 +226,7 @@ class FaceEngine:
 
     def cargar_dataset_fotos(self):
         self._pending_identities.clear()
+        self.student_templates = {}
         self.student_embeddings = {}
         self.label_to_student = {}
 
@@ -322,6 +335,9 @@ class FaceEngine:
                 }
 
         for student_id, samples in samples_by_student.items():
+            self.student_templates[student_id] = [
+                s / np.linalg.norm(s) for s in samples if np.linalg.norm(s) > 0
+            ]
             centroid = np.mean(samples, axis=0)
             norm = np.linalg.norm(centroid)
             if not np.isfinite(norm) or norm == 0:
