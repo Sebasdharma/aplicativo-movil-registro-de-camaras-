@@ -8,7 +8,7 @@ if os.name != "nt":
     if hasattr(time, "tzset"):
         time.tzset()
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 
 from app_config import FlaskConfig
@@ -101,6 +101,59 @@ def create_app():
             "identidades_faciales": len(face_engine.label_to_student),
             "hora_servidor": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
+
+    @application.route("/admin", methods=["GET"])
+    @application.route("/dashboard", methods=["GET"])
+    def admin_dashboard():
+        return render_template("admin_dashboard.html")
+
+    @application.route("/api/admin/metricas", methods=["GET"])
+    def admin_metrics():
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            total_estudiantes = cursor.execute("SELECT COUNT(*) FROM estudiantes WHERE activo = 1").fetchone()[0]
+            total_materias = cursor.execute("SELECT COUNT(*) FROM materias WHERE activo = 1").fetchone()[0]
+            total_dispositivos = cursor.execute("SELECT COUNT(*) FROM dispositivos_iot").fetchone()[0]
+            total_fotos = cursor.execute("SELECT COUNT(*) FROM fotos_faciales_estudiantes").fetchone()[0]
+        finally:
+            conn.close()
+
+        return jsonify({
+            "status": "ok",
+            "estudiantes_total": total_estudiantes,
+            "materias_total": total_materias,
+            "dispositivos_total": total_dispositivos,
+            "fotos_total": total_fotos,
+            "motor_biometrico": {
+                "modelo": "YuNet + SFace (128-D)",
+                "clasificador": "Multi-Plantilla k-NN + Centroide",
+                "umbral_coseno": face_engine.RECOGNITION_THRESHOLD,
+                "margen_minimo": face_engine.MIN_RECOGNITION_MARGIN,
+                "identidades_cargadas": len(face_engine.label_to_student),
+            },
+            "servidor": {
+                "hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "base_datos": "Supabase Cloud PostgreSQL" if os.environ.get("USE_SUPABASE", "true").lower() in ("true", "1", "yes") else "SQLite Local",
+            }
+        })
+
+    @application.route("/api/estudiantes", methods=["GET"])
+    def api_estudiantes():
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            filas = cursor.execute("""
+                SELECT e.id, e.codigo_estudiantil, e.nombre_completo, e.nivel_paralelo, e.email, e.activo,
+                       (SELECT COUNT(*) FROM fotos_faciales_estudiantes WHERE estudiante_id = e.id) as total_fotos
+                FROM estudiantes e
+                WHERE e.activo = 1
+                ORDER BY e.nombre_completo ASC
+            """).fetchall()
+            estudiantes = [dict(f) for f in filas]
+        finally:
+            conn.close()
+        return jsonify({"status": "ok", "estudiantes": estudiantes})
 
     if os.environ.get("ASISTECH_ENABLE_BG_WORKER") == "1":
         _start_absence_worker(application)
