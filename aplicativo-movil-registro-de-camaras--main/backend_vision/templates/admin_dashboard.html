@@ -220,7 +220,13 @@
             <i class="fa-solid fa-list-check text-upec-green"></i>
             <h2 class="font-bold text-slate-800 text-sm sm:text-base">Lista de Asistencia en Tiempo Real</h2>
           </div>
-          <span class="text-xs text-slate-500" id="info-aula-horario">Laboratorio de Computación 3 • 2026-B</span>
+          <div class="flex items-center gap-3">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Sincronización en vivo (3s)
+            </span>
+            <span class="text-xs text-slate-500 hidden sm:inline" id="info-aula-horario">Laboratorio de Computación 3 • 2026-B</span>
+          </div>
         </div>
 
         <div class="overflow-x-auto">
@@ -573,6 +579,15 @@
       document.getElementById('input-fecha').value = selectedDate;
       cargarMaterias();
       cargarMetricasGenerales();
+
+      // Sincronización reactiva automática cada 3.5 segundos con la base de datos
+      setInterval(() => {
+        const tabAsistencia = document.getElementById('tab-asistencia');
+        const modal = document.getElementById('modal-asistencia-manual');
+        if (tabAsistencia && !tabAsistencia.classList.contains('hidden') && modal && modal.classList.contains('hidden')) {
+          cargarAsistencia(true);
+        }
+      }, 3500);
     });
 
     // Pestañas
@@ -618,20 +633,22 @@
       }
     }
 
-    // Cargar asistencia de la materia y fecha seleccionadas
-    async function cargarAsistencia() {
+    // Cargar asistencia de la materia y fecha seleccionadas (con soporte para refresco silencioso)
+    async function cargarAsistencia(silencioso = false) {
       const materiaSelect = document.getElementById('select-materia');
       currentMateriaId = parseInt(materiaSelect.value || '1');
       selectedDate = document.getElementById('input-fecha').value;
       const tbody = document.getElementById('tabla-body');
 
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6" class="px-4 py-8 text-center text-slate-500">
-            <i class="fa-solid fa-spinner fa-spin text-upec-green text-xl mr-2"></i> Consultando registros de Supabase...
-          </td>
-        </tr>
-      `;
+      if (!silencioso && (!tbody.children.length || tbody.innerText.includes('Cargando') || tbody.innerText.includes('Consultando'))) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="px-4 py-8 text-center text-slate-500">
+              <i class="fa-solid fa-spinner fa-spin text-upec-green text-xl mr-2"></i> Consultando registros de Supabase...
+            </td>
+          </tr>
+        `;
+      }
 
       try {
         const res = await fetch(`/api/asistencia/resumen?materia_id=${currentMateriaId}&fecha=${selectedDate}`);
