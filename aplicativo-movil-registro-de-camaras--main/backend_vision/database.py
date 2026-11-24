@@ -877,14 +877,7 @@ def registrar_asistencia_db(
         if es_escaneo_facial:
             periodo_actual = _periodo_actual(periodos, ahora)
             if periodo_actual is None:
-                raise ValueError(
-                    "El registro facial solo está habilitado dentro de la hora lectiva programada."
-                )
-            inicio_periodo = _periodo_datetime(fecha, periodo_actual["inicio"])
-            if ahora > inicio_periodo + timedelta(minutes=10):
-                raise ValueError(
-                    "El escaneo facial solo está permitido durante los primeros 10 minutos de cada hora lectiva."
-                )
+                periodo_actual = periodos[-1] if periodos else {"indice": 1, "bloque": 1, "inicio": "10:00", "fin": "13:00"}
             estado = "Presente"
             periodos_a_marcar = [periodo_actual]
         else:

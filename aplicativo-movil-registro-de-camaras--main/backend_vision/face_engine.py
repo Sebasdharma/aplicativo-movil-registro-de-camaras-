@@ -11,10 +11,10 @@ from database import get_db, registrar_asistencia_db
 
 class FaceEngine:
     RECOGNITION_THRESHOLD = float(
-        os.environ.get("ASISTECH_RECOGNITION_THRESHOLD", "0.52")
+        os.environ.get("ASISTECH_RECOGNITION_THRESHOLD", "0.45")
     )
     MIN_RECOGNITION_MARGIN = float(
-        os.environ.get("ASISTECH_MIN_MARGIN", "0.10")
+        os.environ.get("ASISTECH_MIN_MARGIN", "0.06")
     )
     REQUIRED_CONSECUTIVE_MATCHES = 1
     MATCH_CONFIRMATION_WINDOW_SECONDS = 5
