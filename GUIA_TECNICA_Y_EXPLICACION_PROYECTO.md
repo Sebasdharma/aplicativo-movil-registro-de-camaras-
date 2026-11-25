@@ -9,50 +9,50 @@ Este documento reúne toda la fundamentación técnica, matemática y de segurid
 **AsisTech UPEC** es una plataforma institucional de registro automatizado de asistencia estudiantil para la Universidad Politécnica Estatal del Carchi (UPEC). El sistema desacopla la captura biométrica de la gestión docente mediante una arquitectura distribuida en la nube:
 
 ```
-┌───────────────────────────────────────┐         ┌───────────────────────────────────────┐
-│     Samsung Galaxy J2 (Android 5.1)    │         │       Aplicación Móvil Docente        │
-│          Cámara de Reconocimiento     │         │            (Flutter / Dart)           │
-│  - OkHttp 3.12.13 + BoringSSL         │         │  - Gestión de asignaturas y alumnos   │
-│  - Captura periódica / auto-enfoque   │         │  - Control de escaneo en tiempo real  │
-│  - Comunicación TLS 1.2/1.3 a la nube │         │  - Reportes y justificaciones         │
-└──────────────────┬────────────────────┘         └───────────────────┬───────────────────┘
-                   │                                                  │
-                   │ POST /api/camara/telefono/escanear               │ GET /api/asistencia/resumen
-                   │ (Foto Base64 en Tránsito Cifrado)                │ (Estado en Vivo: Presente/Falta)
-                   ▼                                                  ▼
-      ┌─────────────────────────────────────────────────────────────────────────────┐
-      │                   BACKEND VISION EN LA NUBE (Render.com)                     │
-      │                             Python 3.11 / Flask                             │
-      │                                                                             │
-      │  ┌──────────────────────────────┐       ┌────────────────────────────────┐  │
-      │  │     Detección: YuNet ONNX    │ ────► │ Reconocimiento: SFace 128-D    │  │
-      │  │   (cv2.FaceDetectorYN)       │       │    (cv2.FaceRecognizerSF)      │  │
-      │  └──────────────────────────────┘       └────────────────────────────────┘  │
-      │                                                         │                   │
-      │                                                         ▼                   │
-      │                                         ┌────────────────────────────────┐  │
-      │                                         │ Motor Biométrico Multitasking  │  │
-      │                                         │ - Multi-Plantilla k-NN         │  │
-      │                                         │ - Similitud Coseno Unitario    │  │
-      │                                         │ - Umbral Bancario (>= 0.52)    │  │
-      │                                         │ - Margen 1-vs-All (>= 0.10)    │  │
-      │                                         └────────────────────────────────┘  │
-      │                                                         │                   │
-      │                                                         ▼                   │
-      │                                         ┌────────────────────────────────┐  │
-      │                                         │ Sintetizador de Voz: Carchito  │  │
-      │                                         │ "Asistencia registrada, ..."   │  │
-      │                                         └────────────────────────────────┘  │
-      └──────────────────────────────────────┬──────────────────────────────────────┘
-                                             │
-                                             ▼
-                      ┌──────────────────────────────────────────────┐
-                      │        BASE DE DATOS CLOUD (Supabase)        │
-                      │               PostgreSQL 15                  │
-                      │  - Tabla estudiantes y materias (UPEC)       │
-                      │  - 48 fotos biométricas persistentes (BYTEA) │
-                      │  - Asistencias y trazabilidad por períodos   │
-                      └──────────────────────────────────────────────┘
+┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐   ┌───────────────────────────────────────┐
+│     Samsung Galaxy J2 (Android 5.1)    │   │       Aplicación Móvil Docente        │   │      Portal Web de Administración     │
+│          Cámara de Reconocimiento     │   │            (Flutter / Dart)           │   │         (Navegador Web / HTML5)       │
+│  - OkHttp 3.12.13 + Conscrypt         │   │  - Gestión de asignaturas y alumnos   │   │  - Panel de control y KPIs en vivo    │
+│  - Captura periódica / auto-enfoque   │   │  - Control de escaneo en tiempo real  │   │  - Terminal de escaneo facial web     │
+│  - Comunicación TLS 1.3 a la nube     │   │  - Reportes y justificaciones         │   │  - Sincronización reactiva (3.5s)     │
+└──────────────────┬────────────────────┘   └───────────────────┬───────────────────┘   └───────────────────┬───────────────────┘
+                   │                                            │                                           │
+                   │ POST /api/camara/telefono/escanear         │ GET /api/asistencia/resumen               │ GET /admin
+                   │ (Foto Base64 en Tránsito Cifrado)          │ (Estado en Vivo: Presente/Falta)          │ Sincronización continua
+                   ▼                                            ▼                                           ▼
+      ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+      │                                   BACKEND VISION EN LA NUBE (Render.com)                                  │
+      │                                             Python 3.11 / Flask                                           │
+      │                                                                                                           │
+      │  ┌──────────────────────────────┐       ┌────────────────────────────────┐       ┌─────────────────────┐  │
+      │  │     Detección: YuNet ONNX    │ ────► │ Reconocimiento: SFace 128-D    │ ────► │  Portal Web Admin   │  │
+      │  │   (cv2.FaceDetectorYN)       │       │    (cv2.FaceRecognizerSF)      │       │  (Jinja2 / Tailwind)│  │
+      │  └──────────────────────────────┘       └────────────────────────────────┘       └─────────────────────┘  │
+      │                                                         │                                                 │
+      │                                                         ▼                                                 │
+      │                                         ┌────────────────────────────────┐                                │
+      │                                         │ Motor Biométrico Multitasking  │                                │
+      │                                         │ - Multi-Plantilla k-NN         │                                │
+      │                                         │ - Similitud Coseno Unitario    │                                │
+      │                                         │ - Umbral Calibrado (>= 0.45)   │                                │
+      │                                         │ - Margen 1-vs-All (>= 0.06)    │                                │
+      │                                         └────────────────────────────────┘                                │
+      │                                                         │                                                 │
+      │                                                         ▼                                                 │
+      │                                         ┌────────────────────────────────┐                                │
+      │                                         │ Sintetizador de Voz: Carchito  │                                │
+      │                                         │ "Asistencia registrada, ..."   │                                │
+      │                                         └────────────────────────────────┘                                │
+      └─────────────────────────────────────────────────────┬─────────────────────────────────────────────────────┘
+                                                            │
+                                                            ▼
+                                     ┌──────────────────────────────────────────────┐
+                                     │        BASE DE DATOS CLOUD (Supabase)        │
+                                     │               PostgreSQL 15                  │
+                                     │  - Tabla estudiantes y materias (UPEC)       │
+                                     │  - 48 fotos biométricas persistentes (BYTEA) │
+                                     │  - Asistencias y trazabilidad por períodos   │
+                                     └──────────────────────────────────────────────┘
 ```
 
 ---
@@ -166,3 +166,20 @@ python server.py
 cd aplicativo-movil-registro-de-camaras--main\mobile_app
 flutter run
 ```
+
+---
+
+## 6. Portal Web de Administración Institucional
+
+El sistema incluye un portal web de administración accesible para coordinadores, docentes y evaluadores directamente desde el navegador, sin necesidad de compilar o instalar el APK:
+
+- **Acceso Local:** `http://localhost:5000/admin`
+- **Acceso en la Nube (Producción):** `https://asistech-upec-backend.onrender.com/admin`
+
+### Características Principales del Portal Web:
+1. **Control de Asistencia Reactivo:** Tabla en tiempo real que sincroniza automáticamente cada 3.5 segundos con Supabase Cloud. Si el docente toma asistencia en el celular o el estudiante pasa por el Galaxy J2, la fila cambia a verde (`Presente`) instantáneamente en la pantalla del proyector o laptop.
+2. **Terminal Facial Web (HTML5):** Permite realizar escaneos y pruebas de reconocimiento biométrico en vivo utilizando la cámara web de la computadora mediante `navigator.mediaDevices.getUserMedia`, enviando los fotogramas en Base64 directamente a las redes YuNet y SFace.
+3. **Acción Docente Manual:** Posibilidad de cambiar el estado de cualquier alumno (*Presente / Ausente / Justificado*) mediante ventana modal interactiva con un solo clic.
+4. **Exportación de Reportes Oficiales:** Generación y descarga directa de matrices académicas en formato Excel (`.xlsx`) con estilos institucionales UPEC.
+5. **Directorio y Monitoreo IoT:** Supervisión del estado de los dispositivos de aula vinculados (Samsung Galaxy J2, tablets y webcams) y del catálogo de estudiantes enrolados con sus fotos biométricas.
+
