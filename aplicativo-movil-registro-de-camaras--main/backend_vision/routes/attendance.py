@@ -178,6 +178,7 @@ def api_manual():
     metodo = data.get("metodo", "Manual-Docente")
     dispositivo_id = data.get("dispositivo_id")
     periodo_indice = data.get("periodo_indice")
+    fecha = data.get("fecha")
     if isinstance(est_id, bool) or not isinstance(est_id, int) or est_id < 1:
         return jsonify({
             "status": "error",
@@ -230,6 +231,7 @@ def api_manual():
             metodo=metodo,
             dispositivo_id=dispositivo_id,
             periodo_indice=periodo_indice,
+            fecha=fecha,
         )
         return jsonify(res)
     except ValueError as error:

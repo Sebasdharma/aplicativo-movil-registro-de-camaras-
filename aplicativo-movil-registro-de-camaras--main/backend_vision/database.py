@@ -833,6 +833,7 @@ def registrar_asistencia_db(
     metodo="Facial-Carchito",
     dispositivo_id=None,
     periodo_indice=None,
+    fecha=None,
 ):
     if isinstance(estudiante_id, bool) or not isinstance(estudiante_id, int) or estudiante_id < 1:
         raise ValueError("Selecciona un estudiante válido.")
@@ -866,7 +867,7 @@ def registrar_asistencia_db(
             raise ValueError("El estudiante no está inscrito en la materia seleccionada.")
 
         ahora = datetime.now()
-        fecha = ahora.strftime("%Y-%m-%d")
+        fecha = fecha or ahora.strftime("%Y-%m-%d")
         hora = ahora.strftime("%H:%M:%S")
         horario = cursor.execute(
             "SELECT horario FROM materias WHERE id = ?",
@@ -1096,6 +1097,7 @@ def obtener_resumen_asistencia(materia_id=1, fecha=None):
                 estado_general = "Pendiente"
 
             estudiante["estado"] = estado_general
+            estudiante["estado_general"] = estado_general
             estudiante["hora"] = (
                 max(horas_registradas)
                 if horas_registradas
