@@ -22,9 +22,15 @@ class FaceEngineTests(unittest.TestCase):
         self.assertAlmostEqual(margin, 0.2)
 
     def test_recognition_requires_a_clear_margin_between_students(self):
-        self.assertFalse(FaceEngine._is_confident_match(0.40, 0.15))
-        self.assertFalse(FaceEngine._is_confident_match(0.8, 0.03))
-        self.assertTrue(FaceEngine._is_confident_match(0.52, 0.10))
+        # Below threshold → reject regardless of margin
+        self.assertFalse(FaceEngine._is_confident_match(0.40, 0.20))
+        # Above threshold but tiny margin → reject (too similar to 2nd candidate)
+        self.assertFalse(FaceEngine._is_confident_match(0.8, 0.05))
+        # Borderline confidence (< threshold+0.08) needs 1.5x margin (0.12*1.5=0.18)
+        self.assertFalse(FaceEngine._is_confident_match(0.50, 0.14))  # 0.14 < 0.18
+        self.assertTrue(FaceEngine._is_confident_match(0.50, 0.20))   # 0.20 >= 0.18
+        # High confidence needs base margin (0.12)
+        self.assertTrue(FaceEngine._is_confident_match(0.60, 0.13))
         self.assertTrue(FaceEngine._is_confident_match(0.8, 0.15))
 
     def test_predict_face_uses_multi_template_matching_when_available(self):

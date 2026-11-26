@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants/app_colors.dart';
@@ -28,7 +27,6 @@ class InstitutionalCameraView extends StatefulWidget {
 }
 
 class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
-  final FlutterTts _remoteResultTts = FlutterTts();
   List<DispositivoIoT> _devices = [];
   bool _loading = true;
   bool _startingCamera = false;
@@ -41,15 +39,12 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
   String? _tabletCameraId;
   String? _tabletConnectionError;
   List<Map<String, dynamic>> _remoteTablets = [];
-  final Map<String, String> _lastRemoteSpokenEvents = {};
   Timer? _tabletHeartbeatTimer;
   Timer? _remoteTabletsTimer;
-  late final Future<void> _remoteVoiceInitialization;
 
   @override
   void initState() {
     super.initState();
-    _remoteVoiceInitialization = _initializeRemoteVoice();
     _loadDevices();
     _refreshRemoteTablets();
     _remoteTabletsTimer = Timer.periodic(
@@ -70,30 +65,7 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
   void dispose() {
     _tabletHeartbeatTimer?.cancel();
     _remoteTabletsTimer?.cancel();
-    unawaited(_remoteResultTts.stop());
     super.dispose();
-  }
-
-  Future<void> _initializeRemoteVoice() async {
-    try {
-      await _remoteResultTts.setLanguage('es-ES');
-      await _remoteResultTts.setSpeechRate(0.48);
-      await _remoteResultTts.setVolume(1.0);
-    } catch (error) {
-      debugPrint('No se pudo preparar la voz de resultados OpenCV: $error');
-    }
-  }
-
-  Future<void> _announceRemoteResult(String message) async {
-    try {
-      await _remoteVoiceInitialization;
-      if (!mounted) return;
-      await _remoteResultTts.stop();
-      await _remoteResultTts.speak(message);
-    } catch (error) {
-      debugPrint(
-          'No se pudo anunciar el resultado de la cámara remota: $error');
-    }
   }
 
   @override
@@ -180,22 +152,6 @@ class _InstitutionalCameraViewState extends State<InstitutionalCameraView> {
   Future<void> _refreshRemoteTablets() async {
     try {
       final devices = await ApiService.getTabletCameras();
-      if (!mounted) return;
-      for (final tablet in devices) {
-        final tabletId = tablet['tablet_id'] as String?;
-        final result = tablet['resultado'];
-        if (tabletId == null || result is! Map<String, dynamic>) continue;
-        final eventId = result['evento_id']?.toString();
-        final message = result['mensaje']?.toString();
-        if (eventId == null ||
-            message == null ||
-            message.isEmpty ||
-            _lastRemoteSpokenEvents[tabletId] == eventId) {
-          continue;
-        }
-        _lastRemoteSpokenEvents[tabletId] = eventId;
-        unawaited(_announceRemoteResult(message));
-      }
       if (mounted) setState(() => _remoteTablets = devices);
     } catch (error) {
       debugPrint('No se pudieron consultar las tablets: $error');
@@ -678,11 +634,6 @@ class _RemoteTabletCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final active = tablet['estado'] == 'Transmitiendo';
     final name = tablet['nombre'] as String? ?? 'Tablet Android';
-    final result = tablet['resultado'];
-    final resultMessage =
-        result is Map<String, dynamic> ? result['mensaje']?.toString() : null;
-    final resultIsWarning = result is Map<String, dynamic> &&
-        {'fuera_horario', 'desconocido'}.contains(result['tipo']);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -721,20 +672,6 @@ class _RemoteTabletCard extends StatelessWidget {
                     fontSize: 10,
                   ),
                 ),
-                if (resultMessage != null && resultMessage.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      resultMessage,
-                      style: TextStyle(
-                        color: resultIsWarning
-                            ? colors.error
-                            : AppColors.upecGreen,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),

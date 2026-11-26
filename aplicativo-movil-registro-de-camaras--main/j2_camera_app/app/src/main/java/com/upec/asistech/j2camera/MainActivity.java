@@ -18,6 +18,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
@@ -80,7 +81,6 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     static {
         System.setProperty("java.net.preferIPv4Stack", "true");
         System.setProperty("java.net.preferIPv6Addresses", "false");
-        System.setProperty("http.keepAlive", "false");
         try {
             Security.insertProviderAt(Conscrypt.newProvider(), 1);
         } catch (Throwable ignored) {
@@ -96,10 +96,11 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     private static final String ADMIN_PIN = "1234";
 
     private static final long HEARTBEAT_INTERVAL_MS = 1500;
-    private static final long FRAME_INTERVAL_MS = 600;
+    private static final long FRAME_INTERVAL_MS = 350;
     private static final int CAMERA_PERMISSION_REQUEST = 41;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService heartbeatExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean heartbeatInFlight = new AtomicBoolean(false);
     private final AtomicBoolean frameInFlight = new AtomicBoolean(false);
@@ -149,6 +150,10 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     private OkHttpClient httpClient;
     private OkHttpClient dohHttpClient;
     private boolean isShowingSuccess = false;
+    private TextToSpeech textToSpeech;
+    private boolean ttsReady = false;
+    private long lastSpokenAlertAt = 0;
+    private String lastSpokenAlertText = "";
 
     private final Runnable heartbeatLoop = new Runnable() {
         @Override
@@ -196,6 +201,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             wifiLock.setReferenceCounted(false);
         }
         acquireWifiLock();
+        initTextToSpeech();
         mainHandler.post(heartbeatLoop);
 
         checkCameraPermissions();
@@ -515,7 +521,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         bottomCardDrawable.setStroke(dp(3), Color.rgb(0, 230, 118));
         bottomCard.setBackground(bottomCardDrawable);
 
-        tvStatusBadge.setText("✓ ¡ASISTENCIA TOMADA!");
+        tvStatusBadge.setText("✓ ¡ASISTENCIA CORRECTA!");
         tvStatusBadge.setTextColor(Color.rgb(0, 230, 118));
 
         tvStudentName.setText(nombre.toUpperCase());
@@ -566,7 +572,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         bottomCardDrawable.setStroke(dp(2), Color.rgb(255, 180, 0));
         bottomCard.setBackground(bottomCardDrawable);
 
-        tvStatusBadge.setText("⚠ FUERA DE HORARIO");
+        tvStatusBadge.setText("⚠ FUERA DEL HORARIO DE CLASES");
         tvStatusBadge.setTextColor(Color.rgb(255, 180, 0));
         tvStudentName.setText(nombre.toUpperCase());
         tvStudentName.setTextSize(16);
@@ -581,9 +587,9 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         bottomCardDrawable.setStroke(dp(2), Color.rgb(255, 60, 60));
         bottomCard.setBackground(bottomCardDrawable);
 
-        tvStatusBadge.setText("⚠ ROSTRO NO REGISTRADO");
+        tvStatusBadge.setText("⚠ ROSTRO DESCONOCIDO");
         tvStatusBadge.setTextColor(Color.rgb(255, 82, 82));
-        tvStudentName.setText("Rostro no coincide con estudiantes inscritos");
+        tvStudentName.setText("Rostro desconocido");
         tvStudentName.setTextSize(15);
         tvStudentDetail.setText("Mire de frente y asegúrese de tener buena iluminación");
     }
@@ -725,11 +731,59 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     protected void onDestroy() {
         mainHandler.removeCallbacksAndMessages(null);
         closeCamera();
+        if (textToSpeech != null) {
+            try {
+                textToSpeech.stop();
+                textToSpeech.shutdown();
+            } catch (Throwable ignored) {
+            }
+        }
         if (wifiLock != null && wifiLock.isHeld()) {
             wifiLock.release();
         }
+        heartbeatExecutor.shutdownNow();
         networkExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    private void initTextToSpeech() {
+        try {
+            textToSpeech = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && textToSpeech != null) {
+                    int langResult = textToSpeech.setLanguage(new Locale("es", "ES"));
+                    if (langResult == TextToSpeech.LANG_MISSING_DATA
+                            || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        textToSpeech.setLanguage(Locale.getDefault());
+                    }
+                    ttsReady = true;
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void speak(String text) {
+        if (!ttsReady || textToSpeech == null || text == null || text.isEmpty()) {
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "asistech-" + SystemClock.elapsedRealtime());
+            } else {
+                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void speakWithCooldown(String text) {
+        long now = SystemClock.elapsedRealtime();
+        if (text.equals(lastSpokenAlertText) && (now - lastSpokenAlertAt) < 6000L) {
+            return;
+        }
+        lastSpokenAlertText = text;
+        lastSpokenAlertAt = now;
+        speak(text);
     }
 
     private void acquireWifiLock() {
@@ -769,7 +823,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         if (!heartbeatInFlight.compareAndSet(false, true)) {
             return;
         }
-        networkExecutor.execute(() -> {
+        heartbeatExecutor.execute(() -> {
             try {
                 JSONObject payload = new JSONObject();
                 payload.put("tablet_id", tabletId);
@@ -1012,7 +1066,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     private void sendFrame(byte[] data, int width, int height, int rotation) throws Exception {
         ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
         YuvImage image = new YuvImage(data, ImageFormat.NV21, width, height, null);
-        if (!image.compressToJpeg(new Rect(0, 0, width, height), 80, jpeg)) {
+        if (!image.compressToJpeg(new Rect(0, 0, width, height), 70, jpeg)) {
             throw new IOException("No se pudo codificar el fotograma a JPEG.");
         }
         JSONObject payload = new JSONObject();
@@ -1059,23 +1113,28 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
 
         if (outsideSchedule != null) {
             String name = outsideSchedule.optString("nombre", "Estudiante");
-            String msg = outsideSchedule.optString("mensaje", "Fuera del horario de clase");
+            String msg = outsideSchedule.optString("mensaje", "Fuera del horario de clases");
             mainHandler.post(() -> {
                 showOutsideScheduleUI(name, msg);
                 tvScanServerStatus.setText("⚠ " + msg + ": " + name);
                 tvScanServerStatus.setTextColor(Color.rgb(255, 179, 0));
+                speakWithCooldown("Fuera del horario de clases");
             });
-            reportResult("fuera_horario", "Fuera de horario: " + name, "fh:" + name);
+            reportResult("fuera_horario", "Fuera del horario de clases", "fh:" + name);
         } else if (identifiedStudent != null) {
             String name = identifiedStudent.optString("nombre", "Estudiante");
             String code = identifiedStudent.optString("codigo", "");
             String state = identifiedStudent.optString("asistencia", "Presente");
+            boolean wasShowingSuccess = isShowingSuccess;
             mainHandler.post(() -> {
                 showSuccessUI(name, code, state);
-                tvScanServerStatus.setText("✓ ¡Identificado con éxito! (" + name + ")");
+                tvScanServerStatus.setText("✓ ¡Asistencia correcta! (" + name + ")");
                 tvScanServerStatus.setTextColor(Color.rgb(0, 230, 118));
+                if (!wasShowingSuccess) {
+                    speak("Asistencia correcta");
+                }
             });
-            reportResult("reconocido", "Asistencia tomada: " + name, "rec:" + code);
+            reportResult("reconocido", "Asistencia correcta: " + name, "rec:" + code);
         } else if (verifyingFace != null) {
             String name = verifyingFace.optString("nombre", "");
             int conf = verifyingFace.optInt("confianza", 0);
@@ -1089,9 +1148,11 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         } else if (hasUnrecognized) {
             mainHandler.post(() -> {
                 showUnrecognizedUI();
-                tvScanServerStatus.setText("⚠ Rostro no registrado");
+                tvScanServerStatus.setText("⚠ Rostro desconocido");
                 tvScanServerStatus.setTextColor(Color.rgb(255, 82, 82));
+                speakWithCooldown("Rostro desconocido");
             });
+            reportResult("desconocido", "Rostro desconocido", "desc:");
         } else {
             mainHandler.post(this::showVerifyingUI);
         }

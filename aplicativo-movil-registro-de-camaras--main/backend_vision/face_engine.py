@@ -11,13 +11,14 @@ from database import get_db, registrar_asistencia_db
 
 class FaceEngine:
     RECOGNITION_THRESHOLD = float(
-        os.environ.get("ASISTECH_RECOGNITION_THRESHOLD", "0.45")
+        os.environ.get("ASISTECH_RECOGNITION_THRESHOLD", "0.48")
     )
     MIN_RECOGNITION_MARGIN = float(
-        os.environ.get("ASISTECH_MIN_MARGIN", "0.06")
+        os.environ.get("ASISTECH_MIN_MARGIN", "0.12")
     )
     REQUIRED_CONSECUTIVE_MATCHES = 1
     MATCH_CONFIRMATION_WINDOW_SECONDS = 5
+    MIN_FACE_PIXELS = 50  # minimum face width/height for reliable recognition
 
     def __init__(self):
         models_dir = os.path.join(
@@ -102,19 +103,24 @@ class FaceEngine:
             interpolation=cv2.INTER_AREA,
         )
 
-    def _decode_image(self, image_bytes):
+    def _decode_image(self, image_bytes, max_dim=720):
         image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         if image is None or image.size == 0:
             return None
-        return self._limitar_resolucion(image)
+        return self._limitar_resolucion(image, max_dim=max_dim)
 
-    def _face_sample(self, image, detection):
+    def _face_sample(self, image, detection, fast=False):
         with self._model_lock:
             aligned = self.face_recognizer.alignCrop(image, detection)
             embedding_raw = self.face_recognizer.feature(aligned).reshape(-1)
             norm_raw = np.linalg.norm(embedding_raw)
             if norm_raw > 0 and np.isfinite(norm_raw):
                 embedding_raw = embedding_raw / norm_raw
+
+            if fast:
+                if not np.isfinite(norm_raw) or norm_raw == 0:
+                    raise ValueError("No se pudo calcular la representación facial.")
+                return embedding_raw
 
             aligned_flip = cv2.flip(aligned, 1)
             embedding_flip = self.face_recognizer.feature(aligned_flip).reshape(-1)
@@ -162,10 +168,25 @@ class FaceEngine:
 
     @classmethod
     def _is_confident_match(cls, confidence, margin):
-        return (
-            confidence >= cls.RECOGNITION_THRESHOLD
-            and margin >= cls.MIN_RECOGNITION_MARGIN
-        )
+        if confidence < cls.RECOGNITION_THRESHOLD:
+            return False
+        # Dynamic margin: borderline confidence (threshold → threshold+0.08)
+        # requires 50% more margin to avoid confusing similar-looking students.
+        required_margin = cls.MIN_RECOGNITION_MARGIN
+        if confidence < cls.RECOGNITION_THRESHOLD + 0.08:
+            required_margin = required_margin * 1.5
+        return margin >= required_margin
+
+    @staticmethod
+    def _is_face_quality_ok(bounds, min_size=None):
+        """Reject faces that are too small for reliable recognition."""
+        if min_size is None:
+            min_size = FaceEngine.MIN_FACE_PIXELS
+        try:
+            w, h = float(bounds[2]), float(bounds[3])
+            return w >= min_size and h >= min_size
+        except (IndexError, TypeError):
+            return True
 
     def _confirm_identity(self, student_id, session_key="default"):
         now = time.monotonic()
@@ -369,7 +390,7 @@ class FaceEngine:
     def reconocer_imagen(
         self, image_bytes, materia_id, rotacion=0, session_key="default"
     ):
-        image = self._decode_image(image_bytes)
+        image = self._decode_image(image_bytes, max_dim=480)
         if image is None:
             return {"status": "error", "mensaje": "La imagen recibida no es válida."}, 400
         if rotacion == 90:
@@ -380,48 +401,18 @@ class FaceEngine:
             image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
         faces = self._detect_faces(image)
-        needs_orientation_search = (
-            len(faces) == 0
-            or (len(faces) == 1 and not self._is_face_upright(faces[0]))
-        )
-        if needs_orientation_search:
-            best_image, best_faces = None, None
-            candidates = [image]
-            if len(faces) == 0:
-                candidates.append(self._normalizar_iluminacion(image))
-            for base_img in candidates:
-                for flag in (
-                    None,
-                    cv2.ROTATE_180,
-                    cv2.ROTATE_90_CLOCKWISE,
-                    cv2.ROTATE_90_COUNTERCLOCKWISE,
-                ):
-                    cand = base_img if flag is None else cv2.rotate(base_img, flag)
+        if len(faces) == 0:
+            norm_img = self._normalizar_iluminacion(image)
+            norm_faces = self._detect_faces(norm_img)
+            if len(norm_faces) > 0:
+                image, faces = norm_img, norm_faces
+            elif rotacion == 0:
+                for flag in (cv2.ROTATE_90_COUNTERCLOCKWISE, cv2.ROTATE_90_CLOCKWISE):
+                    cand = cv2.rotate(image, flag)
                     cand_faces = self._detect_faces(cand)
-                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
-                        best_image, best_faces = cand, cand_faces
+                    if len(cand_faces) > 0 and self._is_face_upright(cand_faces[0]):
+                        image, faces = cand, cand_faces
                         break
-                    if best_faces is None and len(cand_faces) > 0:
-                        best_image, best_faces = cand, cand_faces
-                if best_faces is not None and len(best_faces) == 1 and self._is_face_upright(best_faces[0]):
-                    break
-            if best_faces is None:
-                flipped = cv2.flip(image, 1)
-                for flag in (
-                    None,
-                    cv2.ROTATE_180,
-                    cv2.ROTATE_90_CLOCKWISE,
-                    cv2.ROTATE_90_COUNTERCLOCKWISE,
-                ):
-                    cand = flipped if flag is None else cv2.rotate(flipped, flag)
-                    cand_faces = self._detect_faces(cand)
-                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
-                        best_image, best_faces = cand, cand_faces
-                        break
-                    if best_faces is None and len(cand_faces) > 0:
-                        best_image, best_faces = cand, cand_faces
-            if best_faces is not None:
-                image, faces = best_image, best_faces
 
         if len(faces) == 0:
             self._reset_pending_identity(session_key)
@@ -456,7 +447,13 @@ class FaceEngine:
 
         resultados = []
         for bounds in faces:
-            sample = self._face_sample(image, bounds)
+            if not self._is_face_quality_ok(bounds):
+                resultados.append({
+                    "estado": "desconocido",
+                    "mensaje": "Rostro demasiado pequeño. Acerca la cámara.",
+                })
+                continue
+            sample = self._face_sample(image, bounds, fast=True)
             label, confidence, margin = self._predict_face(sample)
             estudiante = self.label_to_student.get(label)
             is_match = (
@@ -465,28 +462,23 @@ class FaceEngine:
                 and self._is_confident_match(confidence, margin)
             )
             if not is_match:
-                retry_candidates = (
-                    self._normalizar_iluminacion(image),
-                    cv2.rotate(image, cv2.ROTATE_180),
-                    cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
-                    cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE),
-                    cv2.rotate(self._normalizar_iluminacion(image), cv2.ROTATE_180),
-                )
-                for cand_img in retry_candidates:
-                    cand_faces = self._detect_faces(cand_img)
-                    if len(cand_faces) == 1 and self._is_face_upright(cand_faces[0]):
-                        cand_sample = self._face_sample(cand_img, cand_faces[0])
-                        c_label, c_conf, c_margin = self._predict_face(cand_sample)
-                        c_est = self.label_to_student.get(c_label)
-                        if (
-                            c_est is not None
-                            and c_est["id"] in inscritos
-                            and self._is_confident_match(c_conf, c_margin)
-                        ):
-                            label, confidence, margin = c_label, c_conf, c_margin
-                            estudiante = c_est
-                            is_match = True
-                            break
+                # Fast fallback: normalize illumination and re-extract embedding
+                # using the SAME face bounds (skips expensive re-detection)
+                norm_img = self._normalizar_iluminacion(image)
+                try:
+                    cand_sample = self._face_sample(norm_img, bounds, fast=True)
+                    c_label, c_conf, c_margin = self._predict_face(cand_sample)
+                    c_est = self.label_to_student.get(c_label)
+                    if (
+                        c_est is not None
+                        and c_est["id"] in inscritos
+                        and self._is_confident_match(c_conf, c_margin)
+                    ):
+                        label, confidence, margin = c_label, c_conf, c_margin
+                        estudiante = c_est
+                        is_match = True
+                except Exception:
+                    pass  # fallback failed, keep original result
             print(
                 f"[FACE SCAN] Match={is_match} | conf={confidence:.3f} | margin={margin:.3f} | "
                 f"estudiante={estudiante['nombre_completo'] if estudiante else 'Desconocido'}",
