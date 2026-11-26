@@ -531,6 +531,14 @@ def obtener_periodos_lectivos(horario, fecha):
             continue
 
         block_index += 1
+        if "unica" in normalized_line or "unico" in normalized_line:
+            periods.append({
+                "indice": len(periods) + 1,
+                "bloque": block_index,
+                "inicio": f"{start_minute_of_day // 60:02d}:{start_minute_of_day % 60:02d}",
+                "fin": f"{end_minute_of_day // 60:02d}:{end_minute_of_day % 60:02d}",
+            })
+            continue
         slot_start = start_minute_of_day
         while slot_start < end_minute_of_day:
             slot_end = min(slot_start + 60, end_minute_of_day)
