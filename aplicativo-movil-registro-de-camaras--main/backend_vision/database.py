@@ -601,6 +601,7 @@ def _guardar_periodo(
         """
         + (
             " WHERE asistencia_periodos.metodo_registro != 'Manual-Docente'"
+            " OR asistencia_periodos.estado = 'Ausente'"
             if preservar_manual
             else ""
         )
