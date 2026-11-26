@@ -753,6 +753,9 @@ def aplicar_ausencias_programadas(ahora=None):
             "SELECT id, horario FROM materias WHERE activo = 1"
         ).fetchall()
         for materia in materias:
+            horario_txt = _normalizar_texto(materia["horario"] or "")
+            if "unica" in horario_txt:
+                continue  # Materias de prueba (bloque único) no tienen falta automática
             periodos = obtener_periodos_lectivos(materia["horario"], fecha)
             if not periodos:
                 continue
@@ -869,18 +872,20 @@ def registrar_asistencia_db(
             "SELECT horario FROM materias WHERE id = ?",
             (materia_id,),
         ).fetchone()
-        periodos = obtener_periodos_lectivos(
-            horario["horario"] if horario else "", fecha
-        )
+        horario_raw = horario["horario"] if horario else ""
+        periodos = obtener_periodos_lectivos(horario_raw, fecha)
         if not periodos:
             raise ValueError("Esta materia no tiene horas lectivas programadas para hoy.")
+
+        es_materia_unica = "unica" in _normalizar_texto(horario_raw)
 
         _migrar_asistencia_legacy(
             cursor, estudiante_id, materia_id, fecha, periodos
         )
-        _aplicar_ausencias_automaticas(
-            cursor, estudiante_id, materia_id, fecha, periodos, ahora
-        )
+        if not es_materia_unica:
+            _aplicar_ausencias_automaticas(
+                cursor, estudiante_id, materia_id, fecha, periodos, ahora
+            )
 
         es_escaneo_facial = "facial" in metodo.casefold()
         if es_escaneo_facial:
